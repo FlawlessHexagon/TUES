@@ -2,6 +2,7 @@
 _doc/_godot_docs_html_stable/
 past failure/
 agent_protocol.md
+_doc/agent_prompt/
 
 # General
 .DS_Store
