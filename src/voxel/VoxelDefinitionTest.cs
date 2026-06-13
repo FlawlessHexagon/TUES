@@ -145,7 +145,7 @@ public partial class VoxelDefinitionTest : Node
 	// After finalization, any registration attempt must throw.
 	private void Test6_PostFinalizationRegistrationProducesError()
 	{
-		VoxelRegistry.Finalize();
+		VoxelRegistry.FreezeRegistry();
 
 		try
 		{

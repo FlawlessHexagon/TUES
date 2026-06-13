@@ -9,7 +9,7 @@ namespace TheUniversalEntertainmentSystem;
 /// runtime ushort IDs (used in chunk data arrays for memory efficiency).
 ///
 /// The registry is populated during startup and becomes read-only after
-/// <see cref="Finalize"/> is called. All post-finalization access is safe for
+/// <see cref="FreezeRegistry"/> is called. All post-finalization access is safe for
 /// concurrent reads from worker threads without synchronisation, because the
 /// underlying data is immutable once finalized.
 ///
@@ -64,7 +64,7 @@ public static class VoxelRegistry
 			throw new InvalidOperationException(
 				$"Cannot register voxel type '{type?.NamespacedId ?? "null"}': " +
 				"the registry has been finalized. " +
-				"All registrations must occur before Finalize() is called.");
+				"All registrations must occur before FreezeRegistry() is called.");
 
 		ArgumentNullException.ThrowIfNull(type);
 
@@ -93,7 +93,7 @@ public static class VoxelRegistry
 	///
 	/// This method is idempotent — calling it multiple times is safe.
 	/// </summary>
-	public static void Finalize()
+	public static void FreezeRegistry()
 	{
 		if (_finalized)
 			return;

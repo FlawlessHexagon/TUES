@@ -10,7 +10,7 @@ public static class VoxelRegistration
 {
 	/// <summary>
 	/// Registers the five core voxel types required for basic terrain generation.
-	/// Must be called before <see cref="VoxelRegistry.Finalize"/>.
+	/// Must be called before <see cref="VoxelRegistry.FreezeRegistry"/>.
 	///
 	/// Registration order matters: tues:air is registered first, guaranteeing it
 	/// receives runtime ID 0 (the permanent Air ID reserved by the registry).
