@@ -1,4 +1,7 @@
 using Godot;
+using System;
+using System.Buffers;
+using System.Threading;
 
 namespace TheUniversalEntertainmentSystem;
 
@@ -11,7 +14,7 @@ namespace TheUniversalEntertainmentSystem;
 /// which produces correct behaviour during meshing (exposed faces are rendered).
 /// Neighbour resolution is the ChunkManager's responsibility (Step 0.3).
 /// </summary>
-public sealed class Chunk
+public sealed class Chunk : IDisposable
 {
 	// ── Dimensions ──────────────────────────────────────────────────────────
 	// Defined as const so other systems (mesher, manager, generator) can
@@ -51,7 +54,7 @@ public sealed class Chunk
 	// Flat array is non-negotiable — 3D/jagged arrays scatter memory and destroy
 	// cache locality at the scale of hundreds of chunks per frame.
 
-	private readonly ushort[] _voxels;
+	private ushort[]? _voxels;
 
 	/// <summary>
 	/// Direct access to the underlying voxel data array. Intended for bulk
@@ -62,7 +65,7 @@ public sealed class Chunk
 	/// Use <see cref="GetVoxel"/> / <see cref="SetVoxel"/> for safe, single-voxel
 	/// access that respects chunk boundaries and modification tracking.
 	/// </summary>
-	public ushort[] Voxels => _voxels;
+	public ushort[] Voxels => _voxels ?? throw new ObjectDisposedException(nameof(Chunk));
 
 	// ── Metadata ────────────────────────────────────────────────────────────
 
@@ -87,11 +90,19 @@ public sealed class Chunk
 	/// </summary>
 	public bool IsDirty { get; private set; }
 
+	private byte _state;
+
 	/// <summary>
 	/// The chunk's current lifecycle state. External systems (manager, mesher,
 	/// generator) read and write this to coordinate operations.
+	/// Uses volatile read/write to ensure thread-safe visibility across 
+	/// background generation and main thread polling.
 	/// </summary>
-	public ChunkState State { get; set; }
+	public ChunkState State
+	{
+		get => (ChunkState)Volatile.Read(ref _state);
+		set => Volatile.Write(ref _state, (byte)value);
+	}
 
 	// ── Constructor ─────────────────────────────────────────────────────────
 
@@ -103,9 +114,24 @@ public sealed class Chunk
 	public Chunk(Vector3I position)
 	{
 		Position = position;
-		_voxels = new ushort[Volume];
+		_voxels = ArrayPool<ushort>.Shared.Rent(Volume);
+		// ArrayPool does not guarantee a zeroed array; clear it manually.
+		Array.Clear(_voxels, 0, Volume);
 		State = ChunkState.Unloaded;
 		IsDirty = false;
+	}
+
+	/// <summary>
+	/// Returns the chunk's underlying array to the shared memory pool.
+	/// Must be called when the chunk is permanently unloaded.
+	/// </summary>
+	public void Dispose()
+	{
+		if (_voxels is not null)
+		{
+			ArrayPool<ushort>.Shared.Return(_voxels);
+			_voxels = null;
+		}
 	}
 
 	// ── Voxel access ────────────────────────────────────────────────────────
@@ -118,7 +144,7 @@ public sealed class Chunk
 	/// </summary>
 	public ushort GetVoxel(int x, int y, int z)
 	{
-		if (!IsInBounds(x, y, z))
+		if (!IsInBounds(x, y, z) || _voxels is null)
 			return 0;
 
 		return _voxels[FlatIndex(x, y, z)];
@@ -131,7 +157,7 @@ public sealed class Chunk
 	/// </summary>
 	public void SetVoxel(int x, int y, int z, ushort id)
 	{
-		if (!IsInBounds(x, y, z))
+		if (!IsInBounds(x, y, z) || _voxels is null)
 			return;
 
 		_voxels[FlatIndex(x, y, z)] = id;
