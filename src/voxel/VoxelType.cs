@@ -27,11 +27,16 @@ public sealed class VoxelType
 	public string DisplayName { get; }
 
 	/// <summary>
-	/// Whether this voxel blocks movement and occludes the faces of adjacent voxels
-	/// during chunk meshing. Solid voxels cause their neighbours' shared faces to be
-	/// culled (not rendered), which is the primary optimisation of culled meshing.
+	/// Whether this voxel blocks physical movement and provides collision geometry.
 	/// </summary>
 	public bool IsSolid { get; }
+
+	/// <summary>
+	/// Whether this voxel physically occludes the faces of adjacent voxels
+	/// during chunk meshing. True ONLY for full 1x1x1 opaque cubes (Stone, Dirt). 
+	/// False for Glass, Air, AND Custom non-cubic meshes (Slopes, Stairs).
+	/// </summary>
+	public bool OccludesNeighbours { get; }
 
 	/// <summary>
 	/// Whether this voxel allows light and visibility to pass through it.
@@ -96,6 +101,7 @@ public sealed class VoxelType
 		string namespacedId,
 		string displayName,
 		bool isSolid,
+		bool occludesNeighbours,
 		bool isTransparent,
 		VoxelMeshMode meshMode,
 		string? customMeshPath = null,
@@ -123,6 +129,7 @@ public sealed class VoxelType
 		NamespacedId = namespacedId;
 		DisplayName = displayName;
 		IsSolid = isSolid;
+		OccludesNeighbours = occludesNeighbours;
 		IsTransparent = isTransparent;
 		MeshMode = meshMode;
 		CustomMeshPath = customMeshPath;

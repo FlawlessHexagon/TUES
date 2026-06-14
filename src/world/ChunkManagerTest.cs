@@ -13,8 +13,8 @@ public partial class ChunkManagerTest : Node3D
 	private ChunkManager? _chunkManager;
 	private Camera3D? _camera;
 	
-	// Start high up so we can see the generation pattern
-	private Vector3 _position = new Vector3(0, 40, 0);
+	// Start at Y=120 and angle sharply downward to get a massive sweeping view of the chunks.
+	private Vector3 _position = new Vector3(0, 120, 0);
 
 	public override void _Ready()
 	{
@@ -30,8 +30,8 @@ public partial class ChunkManagerTest : Node3D
 		// 2. Setup ChunkManager
 		_chunkManager = new ChunkManager
 		{
-			LoadDistance = 6, // Keep slightly smaller for fast visual verification
-			UnloadDistance = 8
+			LoadDistance = 16, // Much larger render distance
+			UnloadDistance = 20
 		};
 		AddChild(_chunkManager);
 
@@ -40,8 +40,8 @@ public partial class ChunkManagerTest : Node3D
 		{
 			Current = true
 		};
-		// Look slightly down
-		_camera.RotationDegrees = new Vector3(-30, -45, 0);
+		// Look sharply down and slightly left
+		_camera.RotationDegrees = new Vector3(-60, -45, 0);
 		AddChild(_camera);
 
 		// 4. Setup Lighting

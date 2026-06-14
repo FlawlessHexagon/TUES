@@ -124,6 +124,7 @@ public partial class VoxelDefinitionTest : Node
 				namespacedId: "tues:stone",
 				displayName:  "Duplicate Stone",
 				isSolid:      true,
+				occludesNeighbours: true,
 				isTransparent: false,
 				meshMode:     VoxelMeshMode.Cube));
 
@@ -153,6 +154,7 @@ public partial class VoxelDefinitionTest : Node
 				namespacedId: "tues:new_type",
 				displayName:  "New Type",
 				isSolid:      true,
+				occludesNeighbours: true,
 				isTransparent: false,
 				meshMode:     VoxelMeshMode.Cube));
 

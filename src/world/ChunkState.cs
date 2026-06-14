@@ -24,7 +24,12 @@ public enum ChunkState : byte
 	Generated = 2,
 
 	/// <summary>
+	/// The mesh is actively being generated on a worker thread.
+	/// </summary>
+	Meshing = 3,
+
+	/// <summary>
 	/// Mesh has been built and attached to the scene tree.
 	/// </summary>
-	Meshed = 3,
+	Meshed = 4,
 }

@@ -44,6 +44,18 @@ public static class VoxelRegistry
 	/// </summary>
 	public static int Count => _types.Count;
 
+	// ── High-Performance Flat Lookup Tables ────────────────────────────────
+	// Constructed during FreezeRegistry. These arrays provide direct memory access
+	// to voxel properties, bypassing the object pointer dereferencing of GetType().
+	// This prevents massive L1/L2 cache misses during chunk meshing.
+	
+	public static bool[] OccludesTable { get; private set; } = Array.Empty<bool>();
+	public static bool[] TransparentTable { get; private set; } = Array.Empty<bool>();
+	public static VoxelMeshMode[] MeshModeTable { get; private set; } = Array.Empty<VoxelMeshMode>();
+	public static int[] TextureTopTable { get; private set; } = Array.Empty<int>();
+	public static int[] TextureBottomTable { get; private set; } = Array.Empty<int>();
+	public static int[] TextureSideTable { get; private set; } = Array.Empty<int>();
+
 	/// <summary>
 	/// Registers a voxel type and assigns it the next available runtime ID.
 	/// Runtime IDs are assigned sequentially starting from 0.
@@ -100,6 +112,26 @@ public static class VoxelRegistry
 
 		_finalized = true;
 		_types.TrimExcess();
+
+		// Construct flat arrays
+		int count = _types.Count;
+		OccludesTable = new bool[count];
+		TransparentTable = new bool[count];
+		MeshModeTable = new VoxelMeshMode[count];
+		TextureTopTable = new int[count];
+		TextureBottomTable = new int[count];
+		TextureSideTable = new int[count];
+
+		for (int i = 0; i < count; i++)
+		{
+			VoxelType t = _types[i];
+			OccludesTable[i] = t.OccludesNeighbours;
+			TransparentTable[i] = t.IsTransparent;
+			MeshModeTable[i] = t.MeshMode;
+			TextureTopTable[i] = t.TextureTopIndex;
+			TextureBottomTable[i] = t.TextureBottomIndex;
+			TextureSideTable[i] = t.TextureSideIndex;
+		}
 	}
 
 	/// <summary>
