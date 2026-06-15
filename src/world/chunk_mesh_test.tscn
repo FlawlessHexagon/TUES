@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://dmhxtdhmf1a6"]
-
-[ext_resource type="Script" path="res://src/world/ChunkMeshTest.cs" id="1_ab123"]
-
-[node name="ChunkMeshTest" type="Node3D"]
-script = ExtResource("1_ab123")

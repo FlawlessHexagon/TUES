@@ -27,9 +27,9 @@ public partial class PlayableDebug : SceneTree
         VoxelRegistration.RegisterCoreTypes();
         VoxelRegistry.FreezeRegistry();
 
+        GameSettings.Load();
+
         _chunkManager = new ChunkManager();
-        _chunkManager.LoadDistance = 64; // 1-kilometer horizon
-        _chunkManager.UnloadDistance = 68;
         _chunkManager.ReferencePosition = new Vector3(0, 100, 0); // Pre-load where player spawns
         _chunkManager.OnVoxelChanged += (pos, id) => {
             GD.Print($"[Network Delta Event] Voxel at {pos} changed to {id}");
@@ -74,7 +74,7 @@ public partial class PlayableDebug : SceneTree
         {
             _chunkManager.ReferencePosition = _player.GlobalPosition;
 
-            if (!_worldLoaded && _chunkManager.IsWorldLoaded)
+            if (!_worldLoaded && _chunkManager.IsChunkRadiusLoaded(Vector3.Zero, 4))
             {
                 _worldLoaded = true;
 
@@ -85,7 +85,7 @@ public partial class PlayableDebug : SceneTree
                     ushort id = _chunkManager.GetVoxelAtGlobalPos(new Vector3I(0, y, 0));
                     if (id != VoxelRegistry.AirId)
                     {
-                        spawnY = y + 1.5f; // Place slightly above the block
+                        spawnY = y + 1.0f; // Exactly flush with the top of the block, zero drop
                         break;
                     }
                 }

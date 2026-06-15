@@ -93,6 +93,12 @@ public sealed class Chunk : IDisposable
 	/// not set this flag — this is intentional, as the world generator fills
 	/// chunks via direct array access during generation.
 	/// </summary>
+	/// <summary>
+	/// Cached collision geometry faces returned by the ChunkMesher.
+	/// Used for attaching and detaching Godot StaticBody3D dynamically during collision streaming.
+	/// </summary>
+	public Vector3[]? CollisionFaces { get; set; }
+
 	public bool IsDirty { get; private set; }
 
 	private int _state;
@@ -168,6 +174,7 @@ public sealed class Chunk : IDisposable
 			ArrayPool<ushort>.Shared.Return(_voxels);
 			_voxels = null;
 		}
+		CollisionFaces = null;
 	}
 
 	// ── Voxel access ────────────────────────────────────────────────────────

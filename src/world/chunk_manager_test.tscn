@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://dmhxtdhmf2b7"]
-
-[ext_resource type="Script" path="res://src/world/ChunkManagerTest.cs" id="1_cm123"]
-
-[node name="ChunkManagerTest" type="Node3D"]
-script = ExtResource("1_cm123")

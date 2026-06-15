@@ -10,12 +10,12 @@ public partial class Player : CharacterBody3D
 {
     [Export] public float WalkSpeed { get; set; } = 4.3f;
     [Export] public float SprintSpeed { get; set; } = 6.0f;
-    [Export] public float JumpVelocity { get; set; } = 5.0f; // Yields ~1.27m jump height with 9.8 gravity
+    [Export] public float JumpVelocity { get; set; } = 7.0f; // Yields exactly ~1.25m jump height with 19.6 gravity
+    [Export] public float Gravity { get; set; } = 19.6f; // Realistic 2G game gravity (9.8 is too floaty for games, 32 is a brick)
 
     public PlayerInputState CurrentInput { get; set; }
     public bool IsFlying { get; set; } = false;
 
-    private float _gravity;
     private ChunkManager? _chunkManager;
     private CollisionShape3D _collisionShape = null!;
 
@@ -26,8 +26,6 @@ public partial class Player : CharacterBody3D
 
     public override void _Ready()
     {
-        _gravity = ProjectSettings.GetSetting("physics/3d/default_gravity").AsSingle();
-
         _collisionShape = new CollisionShape3D();
         var boxShape = new BoxShape3D { Size = new Vector3(0.6f, 1.8f, 0.6f) };
         _collisionShape.Shape = boxShape;
@@ -41,12 +39,17 @@ public partial class Player : CharacterBody3D
         Velocity = PlayerKinematics.CalculateVelocity(
             Velocity, 
             CurrentInput, 
-            WalkSpeed, SprintSpeed, JumpVelocity, _gravity, delta, IsOnFloor(), IsFlying
+            WalkSpeed, SprintSpeed, JumpVelocity, Gravity, delta, IsOnFloor(), IsFlying
         );
 
         MoveAndSlide();
 
-        // Clear one-shot states (like jumping) after processing
-        CurrentInput = new PlayerInputState(CurrentInput.MoveDirection, CurrentInput.TargetYaw, false, CurrentInput.IsSprinting, CurrentInput.IsDescending);
+        // Void Safety Net
+        if (GlobalPosition.Y < -50.0f)
+        {
+            GD.Print("[Physics] Player fell into the void. Resurrecting at skybox.");
+            GlobalPosition = new Vector3(0, 100, 0);
+            Velocity = Vector3.Zero;
+        }
     }
 }

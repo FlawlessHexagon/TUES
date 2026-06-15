@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://t3pb8gtxenn3"]
-
-[ext_resource type="Script" uid="uid://ybeel0uldeoj" path="res://src/voxel/VoxelDefinitionTest.cs" id="1"]
-
-[node name="VoxelDefinitionTest" type="Node" unique_id=449425653]
-script = ExtResource("1")

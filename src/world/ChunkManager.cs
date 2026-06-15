@@ -19,13 +19,9 @@ public partial class ChunkManager : Node3D
 	// ── Configuration ───────────────────────────────────────────────────────
 
 	public Vector3 ReferencePosition { get; set; } = Vector3.Zero;
-	public int LoadDistance { get; set; } = 5;
-	public int UnloadDistance { get; set; } = 7;
-	[Export] public int WorldSeed { get; set; } = 1337;
-	[Export] public string GeneratorType { get; set; } = "simplex";
 
 	private static readonly int WorkerThreadsCount = Math.Max(2, System.Environment.ProcessorCount - 2);
-	private const int MaxMeshesAttachedPerFrame = 10;
+	private const int MaxMeshesAttachedPerFrame = 50;
 
 	// ── State ───────────────────────────────────────────────────────────────
 
@@ -62,6 +58,33 @@ public partial class ChunkManager : Node3D
 		}
 	}
 
+	public bool IsChunkRadiusLoaded(Vector3 worldPos, int chunkRadius)
+	{
+		Vector3I centerChunk = GetChunkCoordinate(worldPos);
+		int radiusSq = chunkRadius * chunkRadius;
+
+		for (int x = -chunkRadius; x <= chunkRadius; x++)
+		{
+			for (int z = -chunkRadius; z <= chunkRadius; z++)
+			{
+				if (x * x + z * z <= radiusSq)
+				{
+					// Verify all 8 vertical chunks in this column
+					for (int y = 0; y < 8; y++)
+					{
+						Vector3I pos = new Vector3I(centerChunk.X + x, y, centerChunk.Z + z);
+						if (!_activeChunks.TryGetValue(pos, out var chunk) || chunk.State < ChunkState.Meshed)
+						{
+							return false;
+						}
+					}
+				}
+			}
+		}
+
+		return true;
+	}
+
 	public int ActiveChunkCount => _activeChunks.Count;
 
 	// ── Godot Lifecycle ─────────────────────────────────────────────────────
@@ -71,7 +94,7 @@ public partial class ChunkManager : Node3D
 		Image atlasImage = ChunkMesher.CreateAtlasImage();
 		ImageTexture atlasTexture = ImageTexture.CreateFromImage(atlasImage);
 		ChunkMesher.Initialize(atlasTexture);
-		WorldGenerator.Initialize(WorldSeed, GeneratorType);
+		WorldGenerator.Initialize(GameSettings.WorldSeed, GameSettings.GeneratorType);
 
 		// Spawn background workers
 		for (int i = 0; i < WorkerThreadsCount; i++)
@@ -95,6 +118,7 @@ public partial class ChunkManager : Node3D
 		ProcessUnloading(centerChunk);
 		UpdateGenerationQueue(centerChunk);
 		ProcessMeshAttachments();
+		ProcessCollisionStreaming(centerChunk);
 	}
 
 	// ── Pipeline Stages ─────────────────────────────────────────────────────
@@ -109,11 +133,10 @@ public partial class ChunkManager : Node3D
 			Chunk chunk = kvp.Value;
 
 			int dx = Math.Abs(pos.X - centerChunk.X);
-			int dy = Math.Abs(pos.Y - centerChunk.Y);
 			int dz = Math.Abs(pos.Z - centerChunk.Z);
 			int dist = Math.Max(dx, dz); // Cylindrical unload distance
 
-			if (dist > UnloadDistance || dy > 6) // Unload chunks that are too far horizontally or vertically
+			if (dist > GameSettings.RenderDistance + 2) // Unload meshes that are outside the render radius buffer.
 			{
 				if (chunk.State == ChunkState.Generating || chunk.State == ChunkState.Meshing)
 					continue;
@@ -163,16 +186,16 @@ public partial class ChunkManager : Node3D
 		{
 			_missingChunksQueue.Clear();
 
-			for (int x = -LoadDistance; x <= LoadDistance; x++)
+			for (int x = -GameSettings.RenderDistance; x <= GameSettings.RenderDistance; x++)
 			{
-				for (int y = -4; y <= 4; y++) // Clamp vertical height to 8 chunks (128 meters) to prevent spherical explosion
+				for (int y = 0; y < 8; y++) // Absolute vertical column (Y=0 to Y=7, 128m high) - Standard Minecraft style
 				{
-					for (int z = -LoadDistance; z <= LoadDistance; z++)
+					for (int z = -GameSettings.RenderDistance; z <= GameSettings.RenderDistance; z++)
 					{
-						Vector3I pos = centerChunk + new Vector3I(x, y, z);
+						Vector3I pos = new Vector3I(centerChunk.X + x, y, centerChunk.Z + z);
 						int distSq = x * x + z * z; // Only use 2D distance for cylindrical rendering
 						
-						if (distSq <= LoadDistance * LoadDistance && !_activeChunks.ContainsKey(pos))
+						if (distSq <= GameSettings.RenderDistance * GameSettings.RenderDistance && !_activeChunks.ContainsKey(pos))
 						{
 							_missingChunksQueue.Add((pos, distSq));
 						}
@@ -251,27 +274,52 @@ public partial class ChunkManager : Node3D
 		{
 			bool worked = false;
 
+			// Snapshot the center chunk for thread-safe distance sorting
+			Vector3I currentCenter = _lastCenterChunk;
+			
+			var candidates = new List<(Chunk chunk, int distSq)>();
+
 			foreach (var kvp in _activeChunks)
 			{
-				if (token.IsCancellationRequested) break;
-
-				Chunk chunk = kvp.Value;
-				if (chunk.State != ChunkState.Generated)
-					continue;
-
-				bool neighboursReady = true;
-				foreach (Vector3I offset in neighbours)
+				if (kvp.Value.State == ChunkState.Generated)
 				{
-					Vector3I nPos = chunk.Position + offset;
-					if (!_activeChunks.TryGetValue(nPos, out var nChunk) || nChunk.State < ChunkState.Generated)
-					{
-						neighboursReady = false;
-						break;
-					}
+					int dx = kvp.Key.X - currentCenter.X;
+					int dz = kvp.Key.Z - currentCenter.Z;
+					candidates.Add((kvp.Value, dx * dx + dz * dz));
 				}
+			}
 
-				if (!neighboursReady)
-					continue;
+			if (candidates.Count > 0)
+			{
+				// Sort closest to player first
+				candidates.Sort((a, b) => a.distSq.CompareTo(b.distSq));
+
+				foreach (var candidate in candidates)
+				{
+					if (token.IsCancellationRequested) break;
+
+					Chunk chunk = candidate.chunk;
+					if (chunk.State != ChunkState.Generated)
+						continue;
+
+					bool neighboursReady = true;
+					foreach (Vector3I offset in neighbours)
+					{
+						Vector3I nPos = chunk.Position + offset;
+						
+						// Skip checks for out-of-bounds absolute vertical chunks
+						if (nPos.Y < 0 || nPos.Y >= 8)
+							continue;
+
+						if (!_activeChunks.TryGetValue(nPos, out var nChunk) || nChunk.State < ChunkState.Generated)
+						{
+							neighboursReady = false;
+							break;
+						}
+					}
+
+					if (!neighboursReady)
+						continue;
 
 				if (chunk.TryClaimMeshing())
 				{
@@ -294,6 +342,7 @@ public partial class ChunkManager : Node3D
 						chunk.State = ChunkState.Generated; // Allow retry
 					}
 				}
+			}
 			}
 
 			if (!worked)
@@ -319,7 +368,8 @@ public partial class ChunkManager : Node3D
 			// Safely remove OLD meshes now that the NEW one is ready, eliminating flicker
 			if (_activeMeshesMap.TryGetValue(chunk.Position, out var oldMesh))
 				oldMesh.QueueFree();
-			if (_activeCollisions.TryGetValue(chunk.Position, out var oldCol))
+			// Remove old collision to force a recreation in the streaming pass
+			if (_activeCollisions.Remove(chunk.Position, out var oldCol))
 				oldCol.QueueFree();
 
 			var meshInstance = new MeshInstance3D
@@ -330,24 +380,70 @@ public partial class ChunkManager : Node3D
 			AddChild(meshInstance);
 			_activeMeshesMap[chunk.Position] = meshInstance;
 
-			if (result.CollisionFaces is not null)
-			{
-				var concaveShape = new ConcavePolygonShape3D();
-				concaveShape.SetFaces(result.CollisionFaces);
-				concaveShape.BackfaceCollision = true; // Prevents tunneling from Godot CCW winding order assumptions
-
-				var staticBody = new StaticBody3D { Position = chunk.WorldPosition };
-				var collisionShape = new CollisionShape3D
-				{
-					Shape = concaveShape
-				};
-				staticBody.AddChild(collisionShape);
-				AddChild(staticBody);
-				_activeCollisions[chunk.Position] = staticBody;
-			}
+			chunk.CollisionFaces = result.CollisionFaces;
 
 			chunk.State = ChunkState.Meshed;
 			attachedThisFrame++;
+		}
+	}
+
+	private void ProcessCollisionStreaming(Vector3I centerChunk)
+	{
+		// 1. Unload distant collisions
+		List<Vector3I>? toRemoveCol = null;
+		foreach (var kvp in _activeCollisions)
+		{
+			Vector3I pos = kvp.Key;
+			int dx = Math.Abs(pos.X - centerChunk.X);
+			int dz = Math.Abs(pos.Z - centerChunk.Z);
+			int dist = Math.Max(dx, dz);
+			if (dist > GameSettings.SimulationDistance)
+			{
+				toRemoveCol ??= new List<Vector3I>();
+				toRemoveCol.Add(pos);
+			}
+		}
+
+		if (toRemoveCol != null)
+		{
+			foreach (var pos in toRemoveCol)
+			{
+				var body = _activeCollisions[pos];
+				RemoveChild(body);
+				body.QueueFree();
+				_activeCollisions.Remove(pos);
+			}
+		}
+
+		// 2. Load close collisions
+		for (int x = -GameSettings.SimulationDistance; x <= GameSettings.SimulationDistance; x++)
+		{
+			for (int y = 0; y < 8; y++) // All vertical layers
+			{
+				for (int z = -GameSettings.SimulationDistance; z <= GameSettings.SimulationDistance; z++)
+				{
+					Vector3I pos = new Vector3I(centerChunk.X + x, y, centerChunk.Z + z);
+					int distSq = x * x + z * z;
+					if (distSq <= GameSettings.SimulationDistance * GameSettings.SimulationDistance)
+					{
+						if (!_activeCollisions.ContainsKey(pos) && _activeChunks.TryGetValue(pos, out var chunk))
+						{
+							if (chunk.State >= ChunkState.Meshed && chunk.CollisionFaces != null && chunk.CollisionFaces.Length > 0)
+							{
+								var concaveShape = new ConcavePolygonShape3D();
+								concaveShape.SetFaces(chunk.CollisionFaces);
+								concaveShape.BackfaceCollision = true;
+
+								var staticBody = new StaticBody3D { Position = chunk.WorldPosition };
+								var collisionShape = new CollisionShape3D { Shape = concaveShape };
+								staticBody.AddChild(collisionShape);
+								AddChild(staticBody);
+								_activeCollisions[chunk.Position] = staticBody;
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 

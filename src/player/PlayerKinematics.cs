@@ -25,59 +25,66 @@ public static class PlayerKinematics
 
         if (isFlying)
         {
-            // Flight Mode: No gravity, distinct vertical movement, higher speed, instant deceleration
-            targetSpeed = walkSpeed * 3.0f; // Creative flight is fast
+            // Flight Mode: Smooth acceleration, high speed, no gravity
+            targetSpeed = walkSpeed * 3.0f;
 
-            // Vertical flight
-            nextVelocity.Y = 0;
-            if (input.IsJumping) nextVelocity.Y += jumpVelocity * 0.8f;
-            if (input.IsDescending) nextVelocity.Y -= jumpVelocity * 0.8f;
+            // Smooth vertical flight
+            float targetY = 0f;
+            if (input.IsJumping) targetY += targetSpeed * 0.8f;
+            if (input.IsDescending) targetY -= targetSpeed * 0.8f;
+            nextVelocity.Y = Mathf.Lerp(currentVelocity.Y, targetY, 15.0f * (float)delta);
 
-            // Horizontal flight
+            // Smooth horizontal flight
             Vector3 flatDir = new Vector3(input.MoveDirection.X, 0, input.MoveDirection.Y);
             if (flatDir.LengthSquared() > 0)
             {
                 flatDir = flatDir.Normalized().Rotated(Vector3.Up, input.TargetYaw);
-                nextVelocity.X = flatDir.X * targetSpeed;
-                nextVelocity.Z = flatDir.Z * targetSpeed;
             }
-            else
-            {
-                // Instant stop in air when flying
-                nextVelocity.X = 0;
-                nextVelocity.Z = 0;
-            }
+            
+            Vector3 currentFlat = new Vector3(currentVelocity.X, 0, currentVelocity.Z);
+            Vector3 targetFlat = flatDir * targetSpeed;
+            currentFlat = currentFlat.Lerp(targetFlat, 15.0f * (float)delta);
+
+            nextVelocity.X = currentFlat.X;
+            nextVelocity.Z = currentFlat.Z;
 
             return nextVelocity;
         }
 
-        // --- Standard Walking Mode ---
+        // --- Minecraft + Valorant Style Kinematics ---
 
-        // Apply gravity
-        if (!isOnFloor)
-        {
-            nextVelocity.Y -= gravity * (float)delta;
-        }
-
-        // Handle Jump
-        if (input.IsJumping && isOnFloor)
-        {
-            nextVelocity.Y = jumpVelocity;
-        }
-
-        // Horizontal Movement
         Vector3 walkDir = new Vector3(input.MoveDirection.X, 0, input.MoveDirection.Y);
         if (walkDir.LengthSquared() > 0)
         {
             walkDir = walkDir.Normalized().Rotated(Vector3.Up, input.TargetYaw);
-            nextVelocity.X = walkDir.X * targetSpeed;
-            nextVelocity.Z = walkDir.Z * targetSpeed;
+        }
+
+        Vector3 targetWalkFlat = walkDir * targetSpeed;
+        Vector3 currentWalkFlat = new Vector3(currentVelocity.X, 0, currentVelocity.Z);
+
+        if (isOnFloor)
+        {
+            // Natural Ground Movement: Simulates physical weight.
+            // 10.0f Lerp provides a split-second of momentum when stopping or starting, removing the robot snap.
+            currentWalkFlat = currentWalkFlat.Lerp(targetWalkFlat, 10.0f * (float)delta);
+
+            if (input.IsJumping)
+            {
+                nextVelocity.Y = jumpVelocity;
+            }
         }
         else
         {
-            nextVelocity.X = Mathf.MoveToward(currentVelocity.X, 0, targetSpeed);
-            nextVelocity.Z = Mathf.MoveToward(currentVelocity.Z, 0, targetSpeed);
+            // Natural Air Movement.
+            // 1.5f Lerp provides very limited air-steering, mimicking realistic momentum carry-over.
+            currentWalkFlat = currentWalkFlat.Lerp(targetWalkFlat, 1.5f * (float)delta);
+            
+            // Gravity
+            nextVelocity.Y -= gravity * (float)delta;
         }
+
+        nextVelocity.X = currentWalkFlat.X;
+        nextVelocity.Z = currentWalkFlat.Z;
 
         return nextVelocity;
     }

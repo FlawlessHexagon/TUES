@@ -138,7 +138,7 @@ public partial class PlayerHud : CanvasLayer
         if (_player == null || _chunkManager == null) return;
 
         _debugAccumulator += delta;
-        if (_debugAccumulator >= 0.05) // 20 times per second for smooth coordinate tracking
+        if (_debugAccumulator >= DebugUpdateRate) // Strictly 4 times per second to prevent GC stutter
         {
             _debugAccumulator = 0;
 

@@ -85,16 +85,39 @@ public partial class LocalPlayerController : Node3D
                     {
                         if (breaking)
                         {
-                            _chunkManager.ApplyVoxelDelta(hitPos, VoxelRegistry.AirId); 
-                            GD.Print($"[Interact] Broke block at {hitPos}");
+                            if (hitPos.Y <= 0)
+                            {
+                                GD.Print($"[Interact] Blocked breaking at {hitPos} (Bedrock layer)");
+                            }
+                            else
+                            {
+                                _chunkManager.ApplyVoxelDelta(hitPos, VoxelRegistry.AirId); 
+                                GD.Print($"[Interact] Broke block at {hitPos}");
+                            }
                         }
                         else
                         {
                             ushort selectedId = _hud?.SelectedVoxelId ?? VoxelRegistry.GetRuntimeId("tues:stone");
                             if (selectedId != VoxelRegistry.AirId)
                             {
-                                _chunkManager.ApplyVoxelDelta(prevPos, selectedId); 
-                                GD.Print($"[Interact] Placed voxel {selectedId} at {prevPos}");
+                                Vector3 pPos = _targetPlayer.GlobalPosition;
+                                
+                                // Player AABB (0.6x1.8x0.6 resting on GlobalPosition)
+                                // Voxel AABB (1x1x1 starting at prevPos)
+                                bool intersects = 
+                                    (pPos.X - 0.3f < prevPos.X + 1f && pPos.X + 0.3f > prevPos.X) &&
+                                    (pPos.Y < prevPos.Y + 1f && pPos.Y + 1.8f > prevPos.Y) &&
+                                    (pPos.Z - 0.3f < prevPos.Z + 1f && pPos.Z + 0.3f > prevPos.Z);
+
+                                if (!intersects)
+                                {
+                                    _chunkManager.ApplyVoxelDelta(prevPos, selectedId); 
+                                    GD.Print($"[Interact] Placed voxel {selectedId} at {prevPos}");
+                                }
+                                else
+                                {
+                                    GD.Print($"[Interact] Blocked placement at {prevPos} (Player overlap)");
+                                }
                             }
                         }
                     }
@@ -121,7 +144,7 @@ public partial class LocalPlayerController : Node3D
             _lastJumpTime = now;
         }
 
-        bool isJumping = _targetPlayer.CurrentInput.IsJumping || justJumped;
+        bool isJumping = InputMap.HasAction("jump") && Input.IsActionPressed("jump");
         bool isSprinting = InputMap.HasAction("sprint") && Input.IsActionPressed("sprint");
         bool isDescending = InputMap.HasAction("move_down") && Input.IsActionPressed("move_down");
 

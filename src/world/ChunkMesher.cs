@@ -57,10 +57,11 @@ public static class ChunkMesher
 	private const float UvTileWidth = 1.0f / AtlasCols;
 	private const float UvTileHeight = 1.0f / AtlasRows;
 
-	// Tiny inset to prevent sampling neighbouring tiles at boundaries due to
-	// floating-point imprecision. At 48 pixels wide, 0.001 UV = 0.048 pixels —
-	// well within a single texel.
-	private const float UvEpsilon = 0.001f;
+	// Exact half-texel inset to prevent sampling neighbouring tiles due to
+	// floating-point imprecision at far distances. Forces the sampler to hit
+	// the dead-center of boundary pixels.
+	private const float UvEpsilonX = 0.5f / (AtlasCols * AtlasTilePixels);
+	private const float UvEpsilonY = 0.5f / (AtlasRows * AtlasTilePixels);
 
 	// ── Face geometry tables ────────────────────────────────────────────────
 	//
@@ -314,11 +315,11 @@ public static class ChunkMesher
 
 			int texIndex = GetTextureIndex(id, face);
 
-			// Compute the UV rectangle for this tile
-			float u0 = (texIndex % AtlasCols) * UvTileWidth + UvEpsilon;
-			float v0 = (texIndex / AtlasCols) * UvTileHeight + UvEpsilon;
-			float uSpan = UvTileWidth - 2.0f * UvEpsilon;
-			float vSpan = UvTileHeight - 2.0f * UvEpsilon;
+			// Compute the UV rectangle for this tile, inset by exactly half a texel
+			float u0 = (texIndex % AtlasCols) * UvTileWidth + UvEpsilonX;
+			float v0 = (texIndex / AtlasCols) * UvTileHeight + UvEpsilonY;
+			float uSpan = UvTileWidth - 2.0f * UvEpsilonX;
+			float vSpan = UvTileHeight - 2.0f * UvEpsilonY;
 
 			Vector3 normal = FaceNormals[face];
 			Vector3[] verts = FaceVertices[face];
