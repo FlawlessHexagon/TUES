@@ -17,6 +17,10 @@ public partial class PlayableDebug : SceneTree
     {
         GD.Print("=== Starting Playable Visual Debug ===");
 
+        // Set FPS to 120 and disable VSync for uncapped performance testing
+        DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+        Engine.MaxFps = 120;
+
         InputRegistration.RegisterCoreActions();
 
         // Bootstrapper for Phase 0 Voxel system
@@ -24,8 +28,8 @@ public partial class PlayableDebug : SceneTree
         VoxelRegistry.FreezeRegistry();
 
         _chunkManager = new ChunkManager();
-        _chunkManager.LoadDistance = 5; // 80-meter horizon
-        _chunkManager.UnloadDistance = 7;
+        _chunkManager.LoadDistance = 64; // 1-kilometer horizon
+        _chunkManager.UnloadDistance = 68;
         _chunkManager.ReferencePosition = new Vector3(0, 100, 0); // Pre-load where player spawns
         _chunkManager.OnVoxelChanged += (pos, id) => {
             GD.Print($"[Network Delta Event] Voxel at {pos} changed to {id}");
@@ -87,8 +91,15 @@ public partial class PlayableDebug : SceneTree
                 }
 
                 _player.Position = new Vector3(0, spawnY, 0);
-                _player.SetPhysicsProcess(true);
                 GD.Print($"World loaded! Spawning player smoothly at Y={spawnY}");
+
+                // Defer physics unlocking by 0.1 seconds to allow the Godot PhysicsServer3D 
+                // to synchronize the hundreds of newly attached collision meshes.
+                // This completely eradicates the 'falling through the floor' bug on frame 1.
+                CreateTimer(0.1).Timeout += () => 
+                {
+                    _player.SetPhysicsProcess(true);
+                };
             }
 
             if (_player.Position.Y < -50)

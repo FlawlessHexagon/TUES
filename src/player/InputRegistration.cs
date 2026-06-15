@@ -12,9 +12,20 @@ public static class InputRegistration
 		RegisterAction("move_right", Key.D);
 		RegisterAction("jump", Key.Space);
 		RegisterAction("sprint", Key.Shift);
+		RegisterAction("move_down", Key.Ctrl);
 
 		RegisterMouseAction("interact_break", MouseButton.Left);
 		RegisterMouseAction("interact_place", MouseButton.Right);
+
+		RegisterAction("hotbar_1", Key.Key1);
+		RegisterAction("hotbar_2", Key.Key2);
+		RegisterAction("hotbar_3", Key.Key3);
+		RegisterAction("hotbar_4", Key.Key4);
+		RegisterAction("hotbar_5", Key.Key5);
+		RegisterAction("hotbar_6", Key.Key6);
+		RegisterAction("hotbar_7", Key.Key7);
+		RegisterAction("hotbar_8", Key.Key8);
+		RegisterAction("hotbar_9", Key.Key9);
 	}
 
 	private static void RegisterAction(string actionName, Key physicalKeycode)

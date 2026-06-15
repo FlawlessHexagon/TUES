@@ -32,4 +32,9 @@ public enum ChunkState : byte
 	/// Mesh has been built and attached to the scene tree.
 	/// </summary>
 	Meshed = 4,
+
+	/// <summary>
+	/// Chunk is marked for unload and cannot be claimed by worker threads.
+	/// </summary>
+	Disposed = 5,
 }

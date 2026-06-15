@@ -13,9 +13,11 @@ public partial class LocalPlayerController : Node3D
     private Player _targetPlayer = null!;
     private ChunkManager? _chunkManager;
     private Camera3D _camera = null!;
+    private PlayerHud _hud = null!;
 
     private float _yaw = 0f;
     private float _pitch = 0f;
+    private double _lastJumpTime = 0;
 
     private double _lastInteractTime = 0;
     private const double InteractCooldown = 0.15; // 150ms rhythm
@@ -32,6 +34,13 @@ public partial class LocalPlayerController : Node3D
         _camera.Position = new Vector3(0, 1.6f, 0); // Eye level
         _camera.Current = true; // Tell Godot to actually look through this camera!
         AddChild(_camera);
+
+        if (_chunkManager != null)
+        {
+            _hud = new PlayerHud();
+            _hud.Init(_targetPlayer, _chunkManager);
+            AddChild(_hud);
+        }
 
         Input.MouseMode = Input.MouseModeEnum.Captured;
     }
@@ -81,9 +90,12 @@ public partial class LocalPlayerController : Node3D
                         }
                         else
                         {
-                            ushort stoneId = VoxelRegistry.GetRuntimeId("tues:stone");
-                            _chunkManager.ApplyVoxelDelta(prevPos, stoneId); 
-                            GD.Print($"[Interact] Placed stone at {prevPos}");
+                            ushort selectedId = _hud?.SelectedVoxelId ?? VoxelRegistry.GetRuntimeId("tues:stone");
+                            if (selectedId != VoxelRegistry.AirId)
+                            {
+                                _chunkManager.ApplyVoxelDelta(prevPos, selectedId); 
+                                GD.Print($"[Interact] Placed voxel {selectedId} at {prevPos}");
+                            }
                         }
                     }
                 }
@@ -97,9 +109,22 @@ public partial class LocalPlayerController : Node3D
             inputDir = Input.GetVector("move_left", "move_right", "move_forward", "move_backward");
         }
         
-        bool isJumping = InputMap.HasAction("jump") && Input.IsActionJustPressed("jump");
-        bool isSprinting = InputMap.HasAction("sprint") && Input.IsActionPressed("sprint");
+        bool justJumped = InputMap.HasAction("jump") && Input.IsActionJustPressed("jump");
+        
+        if (justJumped)
+        {
+            double now = Godot.Time.GetTicksMsec() / 1000.0;
+            if (now - _lastJumpTime < 0.3) // 300ms double tap window
+            {
+                _targetPlayer.IsFlying = !_targetPlayer.IsFlying;
+            }
+            _lastJumpTime = now;
+        }
 
-        _targetPlayer.CurrentInput = new PlayerInputState(inputDir, _yaw, isJumping, isSprinting);
+        bool isJumping = _targetPlayer.CurrentInput.IsJumping || justJumped;
+        bool isSprinting = InputMap.HasAction("sprint") && Input.IsActionPressed("sprint");
+        bool isDescending = InputMap.HasAction("move_down") && Input.IsActionPressed("move_down");
+
+        _targetPlayer.CurrentInput = new PlayerInputState(inputDir, _yaw, isJumping, isSprinting, isDescending);
     }
 }

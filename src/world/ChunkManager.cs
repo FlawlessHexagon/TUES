@@ -52,6 +52,8 @@ public partial class ChunkManager : Node3D
 	{
 		get 
 		{
+			if (_activeChunks.IsEmpty) return false; // The world hasn't even started loading yet
+			
 			lock (_queueLock)
 			{
 				if (_missingChunksQueue.Count > 0) return false;
@@ -59,6 +61,8 @@ public partial class ChunkManager : Node3D
 			return _activeChunks.Values.All(c => c.State >= ChunkState.Meshed) && _meshAttachmentQueue.IsEmpty;
 		}
 	}
+
+	public int ActiveChunkCount => _activeChunks.Count;
 
 	// ── Godot Lifecycle ─────────────────────────────────────────────────────
 
@@ -107,9 +111,9 @@ public partial class ChunkManager : Node3D
 			int dx = Math.Abs(pos.X - centerChunk.X);
 			int dy = Math.Abs(pos.Y - centerChunk.Y);
 			int dz = Math.Abs(pos.Z - centerChunk.Z);
-			int dist = Math.Max(dx, Math.Max(dy, dz));
+			int dist = Math.Max(dx, dz); // Cylindrical unload distance
 
-			if (dist > UnloadDistance)
+			if (dist > UnloadDistance || dy > 6) // Unload chunks that are too far horizontally or vertically
 			{
 				if (chunk.State == ChunkState.Generating || chunk.State == ChunkState.Meshing)
 					continue;
@@ -123,6 +127,12 @@ public partial class ChunkManager : Node3D
 
 		foreach (Vector3I pos in toRemove)
 		{
+			if (!_activeChunks.TryGetValue(pos, out var chunkToUnload))
+				continue;
+				
+			if (!chunkToUnload.TryClaimDispose())
+				continue; // Background thread is currently working on it. Skip unloading for now.
+
 			if (_activeMeshesMap.Remove(pos, out var meshInstance))
 			{
 				RemoveChild(meshInstance);
@@ -155,12 +165,12 @@ public partial class ChunkManager : Node3D
 
 			for (int x = -LoadDistance; x <= LoadDistance; x++)
 			{
-				for (int y = -LoadDistance; y <= LoadDistance; y++)
+				for (int y = -4; y <= 4; y++) // Clamp vertical height to 8 chunks (128 meters) to prevent spherical explosion
 				{
 					for (int z = -LoadDistance; z <= LoadDistance; z++)
 					{
 						Vector3I pos = centerChunk + new Vector3I(x, y, z);
-						int distSq = x * x + y * y + z * z;
+						int distSq = x * x + z * z; // Only use 2D distance for cylindrical rendering
 						
 						if (distSq <= LoadDistance * LoadDistance && !_activeChunks.ContainsKey(pos))
 						{
@@ -306,6 +316,12 @@ public partial class ChunkManager : Node3D
 			if (!_activeChunks.ContainsKey(chunk.Position))
 				continue;
 
+			// Safely remove OLD meshes now that the NEW one is ready, eliminating flicker
+			if (_activeMeshesMap.TryGetValue(chunk.Position, out var oldMesh))
+				oldMesh.QueueFree();
+			if (_activeCollisions.TryGetValue(chunk.Position, out var oldCol))
+				oldCol.QueueFree();
+
 			var meshInstance = new MeshInstance3D
 			{
 				Mesh = result.Mesh,
@@ -398,11 +414,8 @@ public partial class ChunkManager : Node3D
 	{
 		if (_activeChunks.TryGetValue(chunkPos, out var chunk))
 		{
-			if (_activeMeshesMap.Remove(chunkPos, out var meshInstance))
-				meshInstance.CallDeferred(Node.MethodName.QueueFree);
-			if (_activeCollisions.Remove(chunkPos, out var staticBody))
-				staticBody.CallDeferred(Node.MethodName.QueueFree);
-				
+			// Do NOT delete the old mesh here! Let it render until the background thread finishes
+			// building the new mesh to prevent visual flashing.
 			chunk.State = ChunkState.Generated; // Pushes it back into meshing queue
 		}
 	}

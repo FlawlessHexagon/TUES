@@ -123,6 +123,23 @@ public sealed class Chunk : IDisposable
 			(int)ChunkState.Generated) == (int)ChunkState.Generated;
 	}
 
+	/// <summary>
+	/// Atomically claims the chunk for unloading. Returns false if the chunk is
+	/// currently being worked on by a background thread (Generating/Meshing).
+	/// </summary>
+	public bool TryClaimDispose()
+	{
+		while (true)
+		{
+			int current = _state;
+			if (current == (int)ChunkState.Generating || current == (int)ChunkState.Meshing)
+				return false;
+
+			if (Interlocked.CompareExchange(ref _state, (int)ChunkState.Disposed, current) == current)
+				return true;
+		}
+	}
+
 	// ── Constructor ─────────────────────────────────────────────────────────
 
 	/// <summary>

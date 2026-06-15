@@ -10,9 +10,10 @@ public partial class Player : CharacterBody3D
 {
     [Export] public float WalkSpeed { get; set; } = 4.3f;
     [Export] public float SprintSpeed { get; set; } = 6.0f;
-    [Export] public float JumpVelocity { get; set; } = 6.5f;
+    [Export] public float JumpVelocity { get; set; } = 5.0f; // Yields ~1.27m jump height with 9.8 gravity
 
     public PlayerInputState CurrentInput { get; set; }
+    public bool IsFlying { get; set; } = false;
 
     private float _gravity;
     private ChunkManager? _chunkManager;
@@ -40,12 +41,12 @@ public partial class Player : CharacterBody3D
         Velocity = PlayerKinematics.CalculateVelocity(
             Velocity, 
             CurrentInput, 
-            WalkSpeed, SprintSpeed, JumpVelocity, _gravity, delta, IsOnFloor()
+            WalkSpeed, SprintSpeed, JumpVelocity, _gravity, delta, IsOnFloor(), IsFlying
         );
 
         MoveAndSlide();
 
         // Clear one-shot states (like jumping) after processing
-        CurrentInput = new PlayerInputState(CurrentInput.MoveDirection, CurrentInput.TargetYaw, false, CurrentInput.IsSprinting);
+        CurrentInput = new PlayerInputState(CurrentInput.MoveDirection, CurrentInput.TargetYaw, false, CurrentInput.IsSprinting, CurrentInput.IsDescending);
     }
 }

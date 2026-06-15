@@ -16,9 +16,42 @@ public static class PlayerKinematics
         float jumpVelocity,
         float gravity,
         double delta,
-        bool isOnFloor)
+        bool isOnFloor,
+        bool isFlying)
     {
         Vector3 nextVelocity = currentVelocity;
+
+        float targetSpeed = input.IsSprinting ? sprintSpeed : walkSpeed;
+
+        if (isFlying)
+        {
+            // Flight Mode: No gravity, distinct vertical movement, higher speed, instant deceleration
+            targetSpeed = walkSpeed * 3.0f; // Creative flight is fast
+
+            // Vertical flight
+            nextVelocity.Y = 0;
+            if (input.IsJumping) nextVelocity.Y += jumpVelocity * 0.8f;
+            if (input.IsDescending) nextVelocity.Y -= jumpVelocity * 0.8f;
+
+            // Horizontal flight
+            Vector3 flatDir = new Vector3(input.MoveDirection.X, 0, input.MoveDirection.Y);
+            if (flatDir.LengthSquared() > 0)
+            {
+                flatDir = flatDir.Normalized().Rotated(Vector3.Up, input.TargetYaw);
+                nextVelocity.X = flatDir.X * targetSpeed;
+                nextVelocity.Z = flatDir.Z * targetSpeed;
+            }
+            else
+            {
+                // Instant stop in air when flying
+                nextVelocity.X = 0;
+                nextVelocity.Z = 0;
+            }
+
+            return nextVelocity;
+        }
+
+        // --- Standard Walking Mode ---
 
         // Apply gravity
         if (!isOnFloor)
@@ -33,14 +66,12 @@ public static class PlayerKinematics
         }
 
         // Horizontal Movement
-        float targetSpeed = input.IsSprinting ? sprintSpeed : walkSpeed;
-        
-        Vector3 flatDir = new Vector3(input.MoveDirection.X, 0, input.MoveDirection.Y);
-        if (flatDir.LengthSquared() > 0)
+        Vector3 walkDir = new Vector3(input.MoveDirection.X, 0, input.MoveDirection.Y);
+        if (walkDir.LengthSquared() > 0)
         {
-            flatDir = flatDir.Normalized().Rotated(Vector3.Up, input.TargetYaw);
-            nextVelocity.X = flatDir.X * targetSpeed;
-            nextVelocity.Z = flatDir.Z * targetSpeed;
+            walkDir = walkDir.Normalized().Rotated(Vector3.Up, input.TargetYaw);
+            nextVelocity.X = walkDir.X * targetSpeed;
+            nextVelocity.Z = walkDir.Z * targetSpeed;
         }
         else
         {
