@@ -11,12 +11,12 @@ namespace TheUniversalEntertainmentSystem;
 public readonly struct MeshResult
 {
 	public readonly ArrayMesh Mesh;
-	public readonly ConcavePolygonShape3D? CollisionShape;
+	public readonly Vector3[]? CollisionFaces;
 
-	public MeshResult(ArrayMesh mesh, ConcavePolygonShape3D? collisionShape)
+	public MeshResult(ArrayMesh mesh, Vector3[]? collisionFaces)
 	{
 		Mesh = mesh;
-		CollisionShape = collisionShape;
+		CollisionFaces = collisionFaces;
 	}
 }
 
@@ -264,14 +264,13 @@ public static class ChunkMesher
 
 		// ── Build collision shape from solid faces ──────────────────────────
 
-		ConcavePolygonShape3D? collisionShape = null;
+		Vector3[]? collisionFaces = null;
 		if (collisionVerts.Count > 0)
 		{
-			collisionShape = new ConcavePolygonShape3D();
-			collisionShape.SetFaces(collisionVerts.ToArray());
+			collisionFaces = collisionVerts.ToArray();
 		}
 
-		return new MeshResult(arrayMesh, collisionShape);
+		return new MeshResult(arrayMesh, collisionFaces);
 	}
 
 	// ── Core meshing logic ──────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
@@ -18,8 +19,8 @@ public partial class ChunkManager : Node3D
 	// ── Configuration ───────────────────────────────────────────────────────
 
 	public Vector3 ReferencePosition { get; set; } = Vector3.Zero;
-	public int LoadDistance { get; set; } = 8;
-	public int UnloadDistance { get; set; } = 10;
+	public int LoadDistance { get; set; } = 5;
+	public int UnloadDistance { get; set; } = 7;
 	[Export] public int WorldSeed { get; set; } = 1337;
 	[Export] public string GeneratorType { get; set; } = "simplex";
 
@@ -27,6 +28,8 @@ public partial class ChunkManager : Node3D
 	private const int MaxMeshesAttachedPerFrame = 10;
 
 	// ── State ───────────────────────────────────────────────────────────────
+
+	public event Action<Vector3I, ushort>? OnVoxelChanged;
 
 	private readonly ConcurrentDictionary<Vector3I, Chunk> _activeChunks = new();
 	private readonly Dictionary<Vector3I, MeshInstance3D> _activeMeshesMap = new();
@@ -44,6 +47,18 @@ public partial class ChunkManager : Node3D
 
 	private Vector3I _lastCenterChunk = new(int.MaxValue, int.MaxValue, int.MaxValue);
 	private readonly List<(Vector3I pos, int distSq)> _missingChunksQueue = new();
+
+	public bool IsWorldLoaded 
+	{
+		get 
+		{
+			lock (_queueLock)
+			{
+				if (_missingChunksQueue.Count > 0) return false;
+			}
+			return _activeChunks.Values.All(c => c.State >= ChunkState.Meshed) && _meshAttachmentQueue.IsEmpty;
+		}
+	}
 
 	// ── Godot Lifecycle ─────────────────────────────────────────────────────
 
@@ -299,12 +314,16 @@ public partial class ChunkManager : Node3D
 			AddChild(meshInstance);
 			_activeMeshesMap[chunk.Position] = meshInstance;
 
-			if (result.CollisionShape is not null)
+			if (result.CollisionFaces is not null)
 			{
+				var concaveShape = new ConcavePolygonShape3D();
+				concaveShape.SetFaces(result.CollisionFaces);
+				concaveShape.BackfaceCollision = true; // Prevents tunneling from Godot CCW winding order assumptions
+
 				var staticBody = new StaticBody3D { Position = chunk.WorldPosition };
 				var collisionShape = new CollisionShape3D
 				{
-					Shape = result.CollisionShape
+					Shape = concaveShape
 				};
 				staticBody.AddChild(collisionShape);
 				AddChild(staticBody);
@@ -323,5 +342,68 @@ public partial class ChunkManager : Node3D
 			Mathf.FloorToInt(worldPosition.Y / Chunk.SizeY),
 			Mathf.FloorToInt(worldPosition.Z / Chunk.SizeZ)
 		);
+	}
+
+	// ── API ─────────────────────────────────────────────────────────────────
+
+	public ushort GetVoxelAtGlobalPos(Vector3I globalPos)
+	{
+		Vector3I chunkPos = new Vector3I(
+			Mathf.FloorToInt((float)globalPos.X / Chunk.SizeX),
+			Mathf.FloorToInt((float)globalPos.Y / Chunk.SizeY),
+			Mathf.FloorToInt((float)globalPos.Z / Chunk.SizeZ)
+		);
+
+		if (_activeChunks.TryGetValue(chunkPos, out var chunk))
+		{
+			int lx = globalPos.X - (chunkPos.X * Chunk.SizeX);
+			int ly = globalPos.Y - (chunkPos.Y * Chunk.SizeY);
+			int lz = globalPos.Z - (chunkPos.Z * Chunk.SizeZ);
+			return chunk.GetVoxel(lx, ly, lz);
+		}
+		return 0; // Air
+	}
+
+	public void ApplyVoxelDelta(Vector3I globalPos, ushort newVoxelId)
+	{
+		Vector3I chunkPos = new Vector3I(
+			Mathf.FloorToInt((float)globalPos.X / Chunk.SizeX),
+			Mathf.FloorToInt((float)globalPos.Y / Chunk.SizeY),
+			Mathf.FloorToInt((float)globalPos.Z / Chunk.SizeZ)
+		);
+
+		if (!_activeChunks.TryGetValue(chunkPos, out var chunk))
+			return;
+
+		int lx = globalPos.X - (chunkPos.X * Chunk.SizeX);
+		int ly = globalPos.Y - (chunkPos.Y * Chunk.SizeY);
+		int lz = globalPos.Z - (chunkPos.Z * Chunk.SizeZ);
+
+		chunk.SetVoxel(lx, ly, lz, newVoxelId);
+		
+		FlagChunkForRemeshing(chunkPos);
+
+		if (lx == 0) FlagChunkForRemeshing(chunkPos + Vector3I.Left);
+		if (lx == Chunk.SizeX - 1) FlagChunkForRemeshing(chunkPos + Vector3I.Right);
+		if (ly == 0) FlagChunkForRemeshing(chunkPos + Vector3I.Down);
+		if (ly == Chunk.SizeY - 1) FlagChunkForRemeshing(chunkPos + Vector3I.Up);
+		if (lz == 0) FlagChunkForRemeshing(chunkPos + Vector3I.Back);
+		if (lz == Chunk.SizeZ - 1) FlagChunkForRemeshing(chunkPos + Vector3I.Forward);
+
+		// Safely emit to main thread
+		Callable.From(() => OnVoxelChanged?.Invoke(globalPos, newVoxelId)).CallDeferred();
+	}
+
+	private void FlagChunkForRemeshing(Vector3I chunkPos)
+	{
+		if (_activeChunks.TryGetValue(chunkPos, out var chunk))
+		{
+			if (_activeMeshesMap.Remove(chunkPos, out var meshInstance))
+				meshInstance.CallDeferred(Node.MethodName.QueueFree);
+			if (_activeCollisions.Remove(chunkPos, out var staticBody))
+				staticBody.CallDeferred(Node.MethodName.QueueFree);
+				
+			chunk.State = ChunkState.Generated; // Pushes it back into meshing queue
+		}
 	}
 }

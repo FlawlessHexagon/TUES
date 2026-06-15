@@ -116,13 +116,29 @@ public partial class ChunkMeshTest : Node3D
 		};
 		AddChild(meshInstance);
 
-		// Add collision geometry
-		if (terrainResult.Value.CollisionShape is not null)
+		// Ensure solid blocks generate collision geometry
+		MeshResult? meshResult = ChunkMesher.BuildMesh(terrainChunk);
+		if (meshResult == null || meshResult.Value.CollisionFaces == null)
 		{
+			GD.PrintErr("Test failed: Solid chunks must produce a collision shape.");
+			return;
+		}
+
+		if (meshResult.Value.CollisionFaces.Length == 0)
+		{
+			GD.PrintErr("Test failed: Solid chunks must have faces in collision shape.");
+		}
+		// Add collision geometry
+		if (terrainResult.Value.CollisionFaces is not null)
+		{
+            var concaveShape = new ConcavePolygonShape3D();
+            concaveShape.SetFaces(terrainResult.Value.CollisionFaces);
+            concaveShape.BackfaceCollision = true;
+
 			var staticBody = new StaticBody3D { Name = "ChunkCollision" };
 			var collisionShape = new CollisionShape3D
 			{
-				Shape = terrainResult.Value.CollisionShape
+				Shape = concaveShape
 			};
 			staticBody.AddChild(collisionShape);
 			AddChild(staticBody);

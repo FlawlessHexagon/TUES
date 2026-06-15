@@ -4,40 +4,58 @@ namespace TheUniversalEntertainmentSystem;
 
 /// <summary>
 /// A visual debug script to test the decoupled Phase 1.1 Player controls.
+/// Includes synchronous loading lock to prevent falling through ungenerated terrain.
 /// </summary>
 public partial class PlayableDebug : SceneTree
 {
+    private Player _player = null!;
+    private ChunkManager _chunkManager = null!;
+    private bool _worldLoaded = false;
+    private int _frameCount = 0;
+
     public override void _Initialize()
     {
         GD.Print("=== Starting Playable Visual Debug ===");
 
         InputRegistration.RegisterCoreActions();
 
-        var floor = new StaticBody3D();
-        var floorCol = new CollisionShape3D();
-        var boxShape = new BoxShape3D { Size = new Vector3(50, 1, 50) };
-        floorCol.Shape = boxShape;
-        floorCol.Position = new Vector3(0, -0.5f, 0); 
-        var floorMesh = new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(50, 1, 50) }, Position = new Vector3(0, -0.5f, 0) };
-        floor.AddChild(floorCol);
-        floor.AddChild(floorMesh);
-        Root.AddChild(floor);
+        // Bootstrapper for Phase 0 Voxel system
+        VoxelRegistration.RegisterCoreTypes();
+        VoxelRegistry.FreezeRegistry();
+
+        _chunkManager = new ChunkManager();
+        _chunkManager.LoadDistance = 5; // 80-meter horizon
+        _chunkManager.UnloadDistance = 7;
+        _chunkManager.ReferencePosition = new Vector3(0, 100, 0); // Pre-load where player spawns
+        _chunkManager.OnVoxelChanged += (pos, id) => {
+            GD.Print($"[Network Delta Event] Voxel at {pos} changed to {id}");
+        };
+        Root.AddChild(_chunkManager);
 
         var sun = new DirectionalLight3D();
         sun.Rotation = new Vector3(Mathf.DegToRad(-45), Mathf.DegToRad(45), 0);
         sun.ShadowEnabled = true;
         Root.AddChild(sun);
 
+        var env = new WorldEnvironment();
+        var sky = new ProceduralSkyMaterial();
+        var skyEnv = new Godot.Environment();
+        skyEnv.Sky = new Sky { SkyMaterial = sky };
+        skyEnv.BackgroundMode = Godot.Environment.BGMode.Sky;
+        env.Environment = skyEnv;
+        Root.AddChild(env);
+
         // Spawn Player (Entity)
-        var player = new Player();
-        player.Init(null); 
-        player.Position = new Vector3(0, 1.0f, 0); 
-        Root.AddChild(player);
+        _player = new Player();
+        _player.Init(null); 
+        _player.Position = new Vector3(0, 100.0f, 0); // Safe drop above max terrain height
+        _player.SetPhysicsProcess(false); // Explicitly lock physics until world loads
+        Root.AddChild(_player);
 
         // Spawn Controller (Presentation)
         var controller = new LocalPlayerController();
-        controller.Init(player);
-        player.AddChild(controller); // Parent to player
+        controller.Init(_player, _chunkManager);
+        _player.AddChild(controller); // Parent to player
 
         if (!InputMap.HasAction("ui_cancel"))
         {
@@ -48,11 +66,45 @@ public partial class PlayableDebug : SceneTree
 
     public override bool _Process(double delta)
     {
+        if (_player != null && _chunkManager != null)
+        {
+            _chunkManager.ReferencePosition = _player.GlobalPosition;
+
+            if (!_worldLoaded && _chunkManager.IsWorldLoaded)
+            {
+                _worldLoaded = true;
+
+                // Detect exact terrain height at X=0, Z=0
+                float spawnY = 100.0f;
+                for (int y = 100; y > 0; y--)
+                {
+                    ushort id = _chunkManager.GetVoxelAtGlobalPos(new Vector3I(0, y, 0));
+                    if (id != VoxelRegistry.AirId)
+                    {
+                        spawnY = y + 1.5f; // Place slightly above the block
+                        break;
+                    }
+                }
+
+                _player.Position = new Vector3(0, spawnY, 0);
+                _player.SetPhysicsProcess(true);
+                GD.Print($"World loaded! Spawning player smoothly at Y={spawnY}");
+            }
+
+            if (_player.Position.Y < -50)
+            {
+                _player.Position = new Vector3(0, 100.0f, 0); // Reset if fell into void
+                _player.Velocity = Vector3.Zero;
+            }
+        }
+
+
         if (Input.IsActionJustPressed("ui_cancel"))
         {
             Quit();
             return true;
         }
+
         return false;
     }
 }
