@@ -31,7 +31,8 @@ public partial class ChunkManagerTest : Node3D
 		_chunkManager = new ChunkManager
 		{
 			LoadDistance = 16, // Much larger render distance
-			UnloadDistance = 20
+			UnloadDistance = 20,
+			GeneratorType = "simplex" // Change this to "perlin" or "superflat"!
 		};
 		AddChild(_chunkManager);
 

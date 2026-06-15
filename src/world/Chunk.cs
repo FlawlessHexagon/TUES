@@ -25,6 +25,11 @@ public sealed class Chunk : IDisposable
 	public const int SizeZ = 16;
 
 	/// <summary>
+	/// Number of voxels in a single horizontal slice: SizeX × SizeZ = 256.
+	/// </summary>
+	public const int LayerVolume = SizeX * SizeZ;
+
+	/// <summary>
 	/// Total number of voxels per chunk: SizeX × SizeY × SizeZ = 4,096.
 	/// Memory footprint of the voxel array: Volume × sizeof(ushort) = 8,192 bytes.
 	/// </summary>
@@ -90,7 +95,7 @@ public sealed class Chunk : IDisposable
 	/// </summary>
 	public bool IsDirty { get; private set; }
 
-	private byte _state;
+	private int _state;
 
 	/// <summary>
 	/// The chunk's current lifecycle state. External systems (manager, mesher,
@@ -101,7 +106,21 @@ public sealed class Chunk : IDisposable
 	public ChunkState State
 	{
 		get => (ChunkState)Volatile.Read(ref _state);
-		set => Volatile.Write(ref _state, (byte)value);
+		set => Volatile.Write(ref _state, (int)value);
+	}
+
+	/// <summary>
+	/// Atomically attempts to transition the chunk from <see cref="ChunkState.Generated"/>
+	/// to <see cref="ChunkState.Meshing"/>. Returns <c>true</c> if the caller successfully
+	/// claimed the chunk for meshing, preventing multiple worker threads from meshing the
+	/// same chunk simultaneously.
+	/// </summary>
+	public bool TryClaimMeshing()
+	{
+		return Interlocked.CompareExchange(
+			ref _state, 
+			(int)ChunkState.Meshing, 
+			(int)ChunkState.Generated) == (int)ChunkState.Generated;
 	}
 
 	// ── Constructor ─────────────────────────────────────────────────────────
