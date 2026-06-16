@@ -12,7 +12,7 @@ public interface IDimensionGenerator
 	/// Used to cache voxel IDs, initialize noise, and set up thread-safe read-only data.
 	/// </summary>
 	/// <param name="seed">The global world seed.</param>
-	void Initialize(int seed);
+	void Initialize(int seed, IRegistryAccess registry);
 
 	/// <summary>
 	/// Populates the given chunk's voxel data array.

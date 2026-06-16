@@ -16,7 +16,7 @@ public sealed class SimplexGenerator : IDimensionGenerator
 
 	private SimplexNoise _noise = null!;
 
-	public void Initialize(int seed)
+	public void Initialize(int seed, IRegistryAccess registry)
 	{
 		_airId = VoxelRegistry.AirId;
 		_bedrockId = VoxelRegistry.GetRuntimeId("tues:bedrock");

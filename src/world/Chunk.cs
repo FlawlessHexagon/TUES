@@ -97,7 +97,7 @@ public sealed class Chunk : IDisposable
 	/// Cached collision geometry faces returned by the ChunkMesher.
 	/// Used for attaching and detaching Godot StaticBody3D dynamically during collision streaming.
 	/// </summary>
-	public Vector3[]? CollisionFaces { get; set; }
+	public Godot.ConcavePolygonShape3D? CollisionShape { get; set; }
 
 	public bool IsDirty { get; private set; }
 
@@ -174,7 +174,8 @@ public sealed class Chunk : IDisposable
 			ArrayPool<ushort>.Shared.Return(_voxels);
 			_voxels = null;
 		}
-		CollisionFaces = null;
+		CollisionShape?.Dispose();
+		CollisionShape = null;
 	}
 
 	// ── Voxel access ────────────────────────────────────────────────────────

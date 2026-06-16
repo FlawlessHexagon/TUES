@@ -91,9 +91,6 @@ public partial class ChunkManager : Node3D
 
 	public override void _Ready()
 	{
-		Image atlasImage = ChunkMesher.CreateAtlasImage();
-		ImageTexture atlasTexture = ImageTexture.CreateFromImage(atlasImage);
-		ChunkMesher.Initialize(atlasTexture);
 		WorldGenerator.Initialize(GameSettings.WorldSeed, GameSettings.GeneratorType);
 
 		// Spawn background workers
@@ -380,7 +377,7 @@ public partial class ChunkManager : Node3D
 			AddChild(meshInstance);
 			_activeMeshesMap[chunk.Position] = meshInstance;
 
-			chunk.CollisionFaces = result.CollisionFaces;
+			chunk.CollisionShape = result.CollisionShape;
 
 			chunk.State = ChunkState.Meshed;
 			attachedThisFrame++;
@@ -428,14 +425,10 @@ public partial class ChunkManager : Node3D
 					{
 						if (!_activeCollisions.ContainsKey(pos) && _activeChunks.TryGetValue(pos, out var chunk))
 						{
-							if (chunk.State >= ChunkState.Meshed && chunk.CollisionFaces != null && chunk.CollisionFaces.Length > 0)
+							if (chunk.State >= ChunkState.Meshed && chunk.CollisionShape != null)
 							{
-								var concaveShape = new ConcavePolygonShape3D();
-								concaveShape.SetFaces(chunk.CollisionFaces);
-								concaveShape.BackfaceCollision = true;
-
 								var staticBody = new StaticBody3D { Position = chunk.WorldPosition };
-								var collisionShape = new CollisionShape3D { Shape = concaveShape };
+								var collisionShape = new CollisionShape3D { Shape = chunk.CollisionShape };
 								staticBody.AddChild(collisionShape);
 								AddChild(staticBody);
 								_activeCollisions[chunk.Position] = staticBody;

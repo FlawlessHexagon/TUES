@@ -25,6 +25,10 @@ public partial class PlayableDebug : SceneTree
 
         // Bootstrapper for Phase 0 Voxel system
         VoxelRegistration.RegisterCoreTypes();
+        
+        // Execute Step 2.0 Integration Test
+        TuesEngineLoaderTest.RunTest();
+        
         VoxelRegistry.FreezeRegistry();
 
         GameSettings.Load();

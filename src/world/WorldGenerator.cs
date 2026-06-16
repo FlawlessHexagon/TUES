@@ -14,25 +14,36 @@ public static class WorldGenerator
 	private static int _currentSeed = -1;
 	private static string _currentGeneratorType = string.Empty;
 
-	/// <summary>
-	/// Must be called once on the main thread during world load to initialize
-	/// the shared thread-safe generator.
-	/// </summary>
 	public static void Initialize(int seed, string generatorType = "superflat")
 	{
 		generatorType = generatorType.ToLower().Trim();
 
 		if (_activeGenerator == null || _currentSeed != seed || _currentGeneratorType != generatorType)
 		{
-			_activeGenerator = generatorType switch
-			{
-				"perlin" => new PerlinGenerator(),
-				"simplex" => new SimplexGenerator(),
-				_ => new SuperflatGenerator()
-			};
+			// Try to load via TuesEngineLoader (Step 2.0 package pipeline)
+			_activeGenerator = TuesEngineLoader.LoadPackageForWorld(generatorType, seed);
 
-			_activeGenerator.Initialize(seed);
-			
+			if (_activeGenerator == null)
+			{
+				GD.PushWarning($"WorldGenerator: Could not load package '{generatorType}'. Using fallback hardcoded generator for Step 2.0 tests.");
+				
+				// Initialize ChunkMesher with fallback atlas for old generators
+				var images = new Godot.Collections.Array<Godot.Image>();
+				TuesEngineLoader.AddCoreImages(images);
+				var atlasTexture = new Godot.Texture2DArray();
+				atlasTexture.CreateFromImages(images);
+				ChunkMesher.Initialize(atlasTexture);
+
+				_activeGenerator = generatorType switch
+				{
+					"perlin" => new PerlinGenerator(),
+					"simplex" => new SimplexGenerator(),
+					_ => new SuperflatGenerator()
+				};
+
+				_activeGenerator.Initialize(seed, new VoxelRegistryWrapper());
+			}
+
 			_currentSeed = seed;
 			_currentGeneratorType = generatorType;
 		}

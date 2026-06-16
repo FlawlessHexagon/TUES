@@ -11,12 +11,12 @@ namespace TheUniversalEntertainmentSystem;
 public readonly struct MeshResult
 {
 	public readonly ArrayMesh Mesh;
-	public readonly Vector3[]? CollisionFaces;
+	public readonly ConcavePolygonShape3D? CollisionShape;
 
-	public MeshResult(ArrayMesh mesh, Vector3[]? collisionFaces)
+	public MeshResult(ArrayMesh mesh, ConcavePolygonShape3D? collisionShape)
 	{
 		Mesh = mesh;
-		CollisionFaces = collisionFaces;
+		CollisionShape = collisionShape;
 	}
 }
 
@@ -26,43 +26,9 @@ public readonly struct MeshResult
 /// voxel's six faces are checked against their neighbours — hidden faces between
 /// adjacent solid opaque voxels are culled, visible faces are emitted as quads with
 /// atlas-mapped UVs.
-///
-/// The mesher does not modify the chunk, does not access the scene tree, and does not
-/// own the meshes it produces. The ChunkManager (Step 0.3) attaches the returned mesh
-/// to the scene tree.
-///
-/// Opaque and transparent faces are separated into distinct surfaces on the ArrayMesh
-/// for correct render ordering.
 /// </summary>
 public static class ChunkMesher
 {
-	// ── Atlas layout constants ──────────────────────────────────────────────
-	//
-	// The texture atlas is a 48×32 pixel image containing 6 tiles (3 columns × 2 rows)
-	// of 16×16 pixels each. Five tiles are used by the starter voxel types:
-	//
-	//   Index 0 (0,0): Grass top    — solid green
-	//   Index 1 (1,0): Grass side   — green top half, brown bottom half
-	//   Index 2 (2,0): Dirt         — solid brown
-	//   Index 3 (0,1): Stone        — solid grey
-	//   Index 4 (1,1): Bedrock      — solid dark grey
-	//   Index 5 (2,1): Unused pad   — black
-	//
-	// UV coordinates map each face quad to one tile. The tile's position in UV space
-	// is computed from the texture index at mesh time.
-
-	private const int AtlasTilePixels = 16;
-	private const int AtlasCols = 3;
-	private const int AtlasRows = 2;
-	private const float UvTileWidth = 1.0f / AtlasCols;
-	private const float UvTileHeight = 1.0f / AtlasRows;
-
-	// Exact half-texel inset to prevent sampling neighbouring tiles due to
-	// floating-point imprecision at far distances. Forces the sampler to hit
-	// the dead-center of boundary pixels.
-	private const float UvEpsilonX = 0.5f / (AtlasCols * AtlasTilePixels);
-	private const float UvEpsilonY = 0.5f / (AtlasRows * AtlasTilePixels);
-
 	// ── Face geometry tables ────────────────────────────────────────────────
 	//
 	// For a unit cube at origin (0,0,0)→(1,1,1), each face is defined by:
@@ -130,35 +96,50 @@ public static class ChunkMesher
 
 	// ── Material cache ──────────────────────────────────────────────────────
 
-	private static StandardMaterial3D? _opaqueMaterial;
-	private static StandardMaterial3D? _transparentMaterial;
+	private static ShaderMaterial? _opaqueMaterial;
+	private static ShaderMaterial? _transparentMaterial;
 
 	/// <summary>
-	/// Initialises the mesher with the atlas texture. Must be called once before
+	/// Initialises the mesher with the atlas texture array. Must be called once before
 	/// the first call to <see cref="BuildMesh"/>. Creates the opaque and transparent
 	/// materials used for all chunk surfaces.
 	/// </summary>
-	/// <param name="atlasTexture">The texture atlas containing all voxel face tiles.</param>
-	public static void Initialize(Texture2D atlasTexture)
+	/// <param name="atlasTexture">The texture atlas containing all voxel face slices.</param>
+	public static void Initialize(Texture2DArray atlasTexture)
 	{
 		ArgumentNullException.ThrowIfNull(atlasTexture);
 
-		_opaqueMaterial = new StandardMaterial3D
-		{
-			AlbedoTexture = atlasTexture,
-			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-			Roughness = 1.0f,
-			SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
-		};
+		string opaqueShaderCode = @"
+shader_type spatial;
+render_mode depth_draw_opaque, cull_back, diffuse_burley, specular_disabled;
+uniform sampler2DArray albedo_texture : source_color, filter_nearest;
 
-		_transparentMaterial = new StandardMaterial3D
-		{
-			AlbedoTexture = atlasTexture,
-			TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-			Roughness = 1.0f,
-			SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
-			Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-		};
+void fragment() {
+    vec4 albedo_tex = texture(albedo_texture, vec3(UV, UV2.x));
+    ALBEDO = albedo_tex.rgb;
+}
+";
+
+		string transparentShaderCode = @"
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_disabled;
+uniform sampler2DArray albedo_texture : source_color, filter_nearest;
+
+void fragment() {
+    vec4 albedo_tex = texture(albedo_texture, vec3(UV, UV2.x));
+    ALBEDO = albedo_tex.rgb;
+    ALPHA = albedo_tex.a;
+    ALPHA_SCISSOR_THRESHOLD = 0.5;
+}
+";
+
+		var opaqueShader = new Shader { Code = opaqueShaderCode };
+		_opaqueMaterial = new ShaderMaterial { Shader = opaqueShader };
+		_opaqueMaterial.SetShaderParameter("albedo_texture", atlasTexture);
+
+		var transparentShader = new Shader { Code = transparentShaderCode };
+		_transparentMaterial = new ShaderMaterial { Shader = transparentShader };
+		_transparentMaterial.SetShaderParameter("albedo_texture", atlasTexture);
 	}
 
 	// ── Public API ──────────────────────────────────────────────────────────
@@ -265,13 +246,15 @@ public static class ChunkMesher
 
 		// ── Build collision shape from solid faces ──────────────────────────
 
-		Vector3[]? collisionFaces = null;
+		ConcavePolygonShape3D? collisionShape = null;
 		if (collisionVerts.Count > 0)
 		{
-			collisionFaces = collisionVerts.ToArray();
+			collisionShape = new ConcavePolygonShape3D();
+			collisionShape.SetFaces(collisionVerts.ToArray());
+			collisionShape.BackfaceCollision = true;
 		}
 
-		return new MeshResult(arrayMesh, collisionFaces);
+		return new MeshResult(arrayMesh, collisionShape);
 	}
 
 	// ── Core meshing logic ──────────────────────────────────────────────────
@@ -314,43 +297,42 @@ public static class ChunkMesher
 			// ── Emit quad geometry ──────────────────────────────────────
 
 			int texIndex = GetTextureIndex(id, face);
-
-			// Compute the UV rectangle for this tile, inset by exactly half a texel
-			float u0 = (texIndex % AtlasCols) * UvTileWidth + UvEpsilonX;
-			float v0 = (texIndex / AtlasCols) * UvTileHeight + UvEpsilonY;
-			float uSpan = UvTileWidth - 2.0f * UvEpsilonX;
-			float vSpan = UvTileHeight - 2.0f * UvEpsilonY;
+			Vector2 uv2Coord = new Vector2(texIndex, 0);
 
 			Vector3 normal = FaceNormals[face];
 			Vector3[] verts = FaceVertices[face];
 
-			// Compute the 4 vertex positions and UV coordinates
+			// Compute the 4 vertex positions
 			Vector3 p0 = origin + verts[0];
 			Vector3 p1 = origin + verts[1];
 			Vector3 p2 = origin + verts[2];
 			Vector3 p3 = origin + verts[3];
 
-			Vector2 uv0 = new(u0 + QuadUvs[0].X * uSpan, v0 + QuadUvs[0].Y * vSpan);
-			Vector2 uv1 = new(u0 + QuadUvs[1].X * uSpan, v0 + QuadUvs[1].Y * vSpan);
-			Vector2 uv2 = new(u0 + QuadUvs[2].X * uSpan, v0 + QuadUvs[2].Y * vSpan);
-			Vector2 uv3 = new(u0 + QuadUvs[3].X * uSpan, v0 + QuadUvs[3].Y * vSpan);
+			Vector2 uv0 = QuadUvs[0];
+			Vector2 uv1 = QuadUvs[1];
+			Vector2 uv2 = QuadUvs[2];
+			Vector2 uv3 = QuadUvs[3];
 
 			int baseIndex = isTransparent ? transparentVertCount : opaqueVertCount;
 
 			st.SetNormal(normal);
 			st.SetUV(uv0);
+			st.SetUV2(uv2Coord);
 			st.AddVertex(p0);
 
 			st.SetNormal(normal);
 			st.SetUV(uv1);
+			st.SetUV2(uv2Coord);
 			st.AddVertex(p1);
 
 			st.SetNormal(normal);
 			st.SetUV(uv2);
+			st.SetUV2(uv2Coord);
 			st.AddVertex(p2);
 
 			st.SetNormal(normal);
 			st.SetUV(uv3);
+			st.SetUV2(uv2Coord);
 			st.AddVertex(p3);
 
 			// Triangle 1: v0 → v2 → v1 (Clockwise winding)
@@ -375,8 +357,6 @@ public static class ChunkMesher
 			}
 
 			// Collision geometry (solid voxels only)
-			// Wait, the collision generation relies on `OccludesTable` instead of `IsSolid`. 
-			// In TUES Phase 0, all standard blocks are solid anyway, so checking OccludesTable is safe.
 			if (VoxelRegistry.OccludesTable[id])
 			{
 				collisionVerts.Add(p0);
@@ -445,62 +425,5 @@ public static class ChunkMesher
 			_ => VoxelRegistry.TextureSideTable[id],   // ±X, ±Z (sides)
 		};
 	}
-
-	// ── Atlas image generation ──────────────────────────────────────────────
-	//
-	// Generates a minimal placeholder atlas for the 5 starter voxel types.
-	// Solid-coloured tiles with a two-tone tile for grass sides. This will be
-	// replaced with real pixel art in a later phase.
-
-	/// <summary>
-	/// Creates a 48×32 pixel placeholder texture atlas image for the starter
-	/// voxel types. Call this during test setup; the returned Image can be
-	/// converted to an <see cref="ImageTexture"/> and passed to
-	/// <see cref="Initialize"/>.
-	/// </summary>
-	public static Image CreateAtlasImage()
-	{
-		int width = AtlasCols * AtlasTilePixels;   // 48
-		int height = AtlasRows * AtlasTilePixels;  // 32
-		var image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-
-		Color grassGreen = new(0.298f, 0.686f, 0.314f);   // #4CAF50
-		Color dirtBrown  = new(0.545f, 0.412f, 0.078f);   // #8B6914
-		Color stoneGrey  = new(0.620f, 0.620f, 0.620f);   // #9E9E9E
-		Color bedrockGrey = new(0.380f, 0.380f, 0.380f);  // #616161
-
-		FillTile(image, 0, 0, grassGreen);                      // Index 0: grass top
-		FillTileHalf(image, 1, 0, grassGreen, dirtBrown);       // Index 1: grass side
-		FillTile(image, 2, 0, dirtBrown);                       // Index 2: dirt
-		FillTile(image, 0, 1, stoneGrey);                       // Index 3: stone
-		FillTile(image, 1, 1, bedrockGrey);                     // Index 4: bedrock
-		FillTile(image, 2, 1, Colors.Black);                    // Index 5: unused pad
-
-		return image;
-	}
-
-	private static void FillTile(Image image, int col, int row, Color color)
-	{
-		int x0 = col * AtlasTilePixels;
-		int y0 = row * AtlasTilePixels;
-		for (int py = 0; py < AtlasTilePixels; py++)
-			for (int px = 0; px < AtlasTilePixels; px++)
-				image.SetPixel(x0 + px, y0 + py, color);
-	}
-
-	private static void FillTileHalf(
-		Image image, int col, int row, Color topColor, Color bottomColor)
-	{
-		int x0 = col * AtlasTilePixels;
-		int y0 = row * AtlasTilePixels;
-		int half = AtlasTilePixels / 2;
-
-		for (int py = 0; py < half; py++)
-			for (int px = 0; px < AtlasTilePixels; px++)
-				image.SetPixel(x0 + px, y0 + py, topColor);
-
-		for (int py = half; py < AtlasTilePixels; py++)
-			for (int px = 0; px < AtlasTilePixels; px++)
-				image.SetPixel(x0 + px, y0 + py, bottomColor);
-	}
 }
+

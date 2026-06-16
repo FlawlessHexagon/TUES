@@ -22,7 +22,7 @@ public sealed class SuperflatGenerator : IDimensionGenerator
 	private ushort _dirtId;
 	private ushort _grassId;
 
-	public void Initialize(int seed)
+	public void Initialize(int seed, IRegistryAccess registry)
 	{
 		_airId = VoxelRegistry.AirId;
 		_bedrockId = VoxelRegistry.GetRuntimeId("tues:bedrock");
