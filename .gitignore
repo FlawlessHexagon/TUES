@@ -1,10 +1,11 @@
 #Project Specific
 _doc/_godot_docs_html_stable/
-past failure/
-agent_protocol.md
+_doc/_media_footage
+_doc/_system_design_primer_master/
 _doc/agent_prompt/
 _doc/agent_report/
-_doc/_media_footage/
+_doc/fix_note/
+agent_protocol.md
 **/_disconnected/
 
 # General

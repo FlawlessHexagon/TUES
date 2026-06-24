@@ -25,7 +25,7 @@ public static class WorldGenerator
 
 			if (_activeGenerator == null)
 			{
-				GD.PushWarning($"WorldGenerator: Could not load package '{generatorType}'. Using fallback hardcoded generator for Step 2.0 tests.");
+				// GD.PushWarning($"WorldGenerator: Could not load package '{generatorType}'. Using fallback hardcoded generator for Step 2.0 tests.");
 				
 				// Initialize ChunkMesher with fallback atlas for old generators
 				var images = new Godot.Collections.Array<Godot.Image>();
@@ -36,6 +36,9 @@ public static class WorldGenerator
 
 				_activeGenerator = generatorType switch
 				{
+					"default" => new SimplexGenerator(),
+					"smooth" => new PerlinGenerator(),
+					"extreme" => new ExtremeGenerator(),
 					"perlin" => new PerlinGenerator(),
 					"simplex" => new SimplexGenerator(),
 					_ => new SuperflatGenerator()

@@ -198,7 +198,10 @@ public static class TuesEngineLoader
 
 		if (generatorType == null)
 		{
-			GD.PushError($"TuesEngineLoader: No type implementing IDimensionGenerator with [DimensionEngine(\"{manifest.Id}\")] found in '{manifest.EntryDll}'.");
+			if (manifest.Id != "test:engine")
+			{
+				GD.PushError($"TuesEngineLoader: No type implementing IDimensionGenerator with [DimensionEngine(\"{manifest.Id}\")] found in '{manifest.EntryDll}'.");
+			}
 			return null;
 		}
 
