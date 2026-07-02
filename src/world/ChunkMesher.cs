@@ -3,22 +3,28 @@ using System.Collections.Generic;
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Return type for <see cref="ChunkMesher.BuildMesh"/>. Contains the visual mesh
 /// and an optional collision shape built from solid voxel faces.
 /// </summary>
-public readonly struct MeshResult
-{
-	public readonly ArrayMesh Mesh;
-	public readonly ConcavePolygonShape3D? CollisionShape;
-
-	public MeshResult(ArrayMesh mesh, ConcavePolygonShape3D? collisionShape)
+	public class MeshResult
 	{
-		Mesh = mesh;
-		CollisionShape = collisionShape;
+		public Vector3[]? OpaqueVerts;
+		public Vector3[]? OpaqueNormals;
+		public Vector2[]? OpaqueUVs;
+		public Vector2[]? OpaqueUV2s;
+		public int[]? OpaqueIndices;
+
+		public Vector3[]? TransVerts;
+		public Vector3[]? TransNormals;
+		public Vector2[]? TransUVs;
+		public Vector2[]? TransUV2s;
+		public int[]? TransIndices;
+
+		public Vector3[]? CollisionFaces;
 	}
-}
 
 /// <summary>
 /// Stateless meshing utility. Reads a <see cref="Chunk"/>'s voxel data and produces
@@ -96,8 +102,8 @@ public static class ChunkMesher
 
 	// ── Material cache ──────────────────────────────────────────────────────
 
-	private static ShaderMaterial? _opaqueMaterial;
-	private static ShaderMaterial? _transparentMaterial;
+	public static ShaderMaterial? OpaqueMaterial { get; private set; }
+	public static ShaderMaterial? TransparentMaterial { get; private set; }
 
 	/// <summary>
 	/// Initialises the mesher with the atlas texture array. Must be called once before
@@ -134,13 +140,51 @@ void fragment() {
 ";
 
 		var opaqueShader = new Shader { Code = opaqueShaderCode };
-		_opaqueMaterial = new ShaderMaterial { Shader = opaqueShader };
-		_opaqueMaterial.SetShaderParameter("albedo_texture", atlasTexture);
+		OpaqueMaterial = new ShaderMaterial { Shader = opaqueShader };
+		OpaqueMaterial.SetShaderParameter("albedo_texture", atlasTexture);
 
 		var transparentShader = new Shader { Code = transparentShaderCode };
-		_transparentMaterial = new ShaderMaterial { Shader = transparentShader };
-		_transparentMaterial.SetShaderParameter("albedo_texture", atlasTexture);
+		TransparentMaterial = new ShaderMaterial { Shader = transparentShader };
+		TransparentMaterial.SetShaderParameter("albedo_texture", atlasTexture);
 	}
+
+	// ── Thread-local Meshing Context ────────────────────────────────────────
+
+	private class MeshingContext
+	{
+		public readonly List<Vector3> OpaqueVerts = new(8192);
+		public readonly List<Vector3> OpaqueNormals = new(8192);
+		public readonly List<Vector2> OpaqueUVs = new(8192);
+		public readonly List<Vector2> OpaqueUV2s = new(8192);
+		public readonly List<int> OpaqueIndices = new(12288);
+
+		public readonly List<Vector3> TransVerts = new(4096);
+		public readonly List<Vector3> TransNormals = new(4096);
+		public readonly List<Vector2> TransUVs = new(4096);
+		public readonly List<Vector2> TransUV2s = new(4096);
+		public readonly List<int> TransIndices = new(6144);
+
+		public readonly List<Vector3> CollisionVerts = new(8192);
+
+		public void Clear()
+		{
+			OpaqueVerts.Clear();
+			OpaqueNormals.Clear();
+			OpaqueUVs.Clear();
+			OpaqueUV2s.Clear();
+			OpaqueIndices.Clear();
+
+			TransVerts.Clear();
+			TransNormals.Clear();
+			TransUVs.Clear();
+			TransUV2s.Clear();
+			TransIndices.Clear();
+
+			CollisionVerts.Clear();
+		}
+	}
+
+	[ThreadStatic] private static MeshingContext? _ctx;
 
 	// ── Public API ──────────────────────────────────────────────────────────
 
@@ -162,14 +206,34 @@ void fragment() {
 		Chunk chunk,
 		Func<int, int, int, ushort>? neighbourLookup = null)
 	{
-		if (_opaqueMaterial is null)
+		if (OpaqueMaterial is null)
 			throw new InvalidOperationException(
 				"ChunkMesher.Initialize() must be called before BuildMesh().");
 
-		var opaqueSt = new SurfaceTool();
-		var transparentSt = new SurfaceTool();
-		opaqueSt.Begin(Mesh.PrimitiveType.Triangles);
-		transparentSt.Begin(Mesh.PrimitiveType.Triangles);
+		ushort[] voxels = chunk.Voxels;
+
+		// Fast-paths: If the entire chunk is 100% Air, skip entirely.
+		// If 100% Solid Opaque, we can skip the inner core during meshing.
+		bool isAir = true;
+		bool isSolidOpaque = true;
+
+		for (int i = 0; i < Chunk.Volume; i++)
+		{
+			ushort id = voxels[i];
+			if (id != VoxelRegistry.AirId)
+			{
+				isAir = false;
+			}
+			if (id == VoxelRegistry.AirId || id >= VoxelRegistry.Count || VoxelRegistry.TransparentTable[id] || !VoxelRegistry.OccludesTable[id])
+			{
+				isSolidOpaque = false;
+			}
+		}
+
+		if (isAir) return null;
+
+		_ctx ??= new MeshingContext();
+		_ctx.Clear();
 
 		bool hasOpaque = false;
 		bool hasTransparent = false;
@@ -177,11 +241,6 @@ void fragment() {
 		int opaqueVertCount = 0;
 		int transparentVertCount = 0;
 
-		// Pre-allocate for a reasonable number of collision triangles.
-		// Each visible solid face produces 2 triangles × 3 vertices = 6 entries.
-		var collisionVerts = new List<Vector3>(4096);
-
-		ushort[] voxels = chunk.Voxels;
 		Vector3I worldPos = chunk.WorldPosition;
 
 		// Iterate in Y-major order matching the chunk's memory layout
@@ -192,6 +251,10 @@ void fragment() {
 			{
 				for (int x = 0; x < Chunk.SizeX; x++)
 				{
+					// Fast-path: Skip fully enclosed inner core of a solid opaque chunk
+					if (isSolidOpaque && x > 0 && x < Chunk.SizeX - 1 && y > 0 && y < Chunk.SizeY - 1 && z > 0 && z < Chunk.SizeZ - 1)
+						continue;
+
 					ushort id = voxels[Chunk.FlatIndex(x, y, z)];
 
 					if (id == VoxelRegistry.AirId || id >= VoxelRegistry.Count)
@@ -206,7 +269,7 @@ void fragment() {
 						case VoxelMeshMode.Custom:
 							// Placeholder: custom mesh stamping is deferred. The code path
 							// exists but no custom-mesh types are in the starter set.
-							GD.PushWarning(
+							Logger.Warning(
 								$"ChunkMesher: Custom mesh mode not yet implemented " +
 								$"(runtime ID {id} at ({x},{y},{z})).");
 							continue;
@@ -215,8 +278,7 @@ void fragment() {
 							EmitCubeFaces(
 								x, y, z, id,
 								chunk, worldPos, neighbourLookup,
-								opaqueSt, transparentSt,
-								collisionVerts,
+								_ctx,
 								ref hasOpaque, ref hasTransparent,
 								ref opaqueVertCount, ref transparentVertCount);
 							break;
@@ -228,33 +290,34 @@ void fragment() {
 		if (!hasOpaque && !hasTransparent)
 			return null;
 
-		// ── Commit surfaces to ArrayMesh ────────────────────────────────────
+		// ── Package primitive arrays ────────────────────────────────────────
 
-		var arrayMesh = new ArrayMesh();
+		var result = new MeshResult();
 
 		if (hasOpaque)
 		{
-			opaqueSt.SetMaterial(_opaqueMaterial);
-			opaqueSt.Commit(arrayMesh);
+			result.OpaqueVerts = _ctx.OpaqueVerts.ToArray();
+			result.OpaqueNormals = _ctx.OpaqueNormals.ToArray();
+			result.OpaqueUVs = _ctx.OpaqueUVs.ToArray();
+			result.OpaqueUV2s = _ctx.OpaqueUV2s.ToArray();
+			result.OpaqueIndices = _ctx.OpaqueIndices.ToArray();
 		}
 
 		if (hasTransparent)
 		{
-			transparentSt.SetMaterial(_transparentMaterial);
-			transparentSt.Commit(arrayMesh);
+			result.TransVerts = _ctx.TransVerts.ToArray();
+			result.TransNormals = _ctx.TransNormals.ToArray();
+			result.TransUVs = _ctx.TransUVs.ToArray();
+			result.TransUV2s = _ctx.TransUV2s.ToArray();
+			result.TransIndices = _ctx.TransIndices.ToArray();
 		}
 
-		// ── Build collision shape from solid faces ──────────────────────────
-
-		ConcavePolygonShape3D? collisionShape = null;
-		if (collisionVerts.Count > 0)
+		if (_ctx.CollisionVerts.Count > 0)
 		{
-			collisionShape = new ConcavePolygonShape3D();
-			collisionShape.SetFaces(collisionVerts.ToArray());
-			collisionShape.BackfaceCollision = true;
+			result.CollisionFaces = _ctx.CollisionVerts.ToArray();
 		}
 
-		return new MeshResult(arrayMesh, collisionShape);
+		return result;
 	}
 
 	// ── Core meshing logic ──────────────────────────────────────────────────
@@ -270,13 +333,11 @@ void fragment() {
 		ushort id,
 		Chunk chunk, Vector3I worldPos,
 		Func<int, int, int, ushort>? neighbourLookup,
-		SurfaceTool opaqueSt, SurfaceTool transparentSt,
-		List<Vector3> collisionVerts,
+		MeshingContext ctx,
 		ref bool hasOpaque, ref bool hasTransparent,
 		ref int opaqueVertCount, ref int transparentVertCount)
 	{
 		bool isTransparent = VoxelRegistry.TransparentTable[id];
-		SurfaceTool st = isTransparent ? transparentSt : opaqueSt;
 		Vector3 origin = new(x, y, z);
 
 		for (int face = 0; face < 6; face++)
@@ -308,50 +369,35 @@ void fragment() {
 			Vector3 p2 = origin + verts[2];
 			Vector3 p3 = origin + verts[3];
 
-			Vector2 uv0 = QuadUvs[0];
-			Vector2 uv1 = QuadUvs[1];
-			Vector2 uv2 = QuadUvs[2];
-			Vector2 uv3 = QuadUvs[3];
-
 			int baseIndex = isTransparent ? transparentVertCount : opaqueVertCount;
-
-			st.SetNormal(normal);
-			st.SetUV(uv0);
-			st.SetUV2(uv2Coord);
-			st.AddVertex(p0);
-
-			st.SetNormal(normal);
-			st.SetUV(uv1);
-			st.SetUV2(uv2Coord);
-			st.AddVertex(p1);
-
-			st.SetNormal(normal);
-			st.SetUV(uv2);
-			st.SetUV2(uv2Coord);
-			st.AddVertex(p2);
-
-			st.SetNormal(normal);
-			st.SetUV(uv3);
-			st.SetUV2(uv2Coord);
-			st.AddVertex(p3);
-
-			// Triangle 1: v0 → v2 → v1 (Clockwise winding)
-			st.AddIndex(baseIndex + 0);
-			st.AddIndex(baseIndex + 2);
-			st.AddIndex(baseIndex + 1);
-
-			// Triangle 2: v0 → v3 → v2 (Clockwise winding)
-			st.AddIndex(baseIndex + 0);
-			st.AddIndex(baseIndex + 3);
-			st.AddIndex(baseIndex + 2);
 
 			if (isTransparent)
 			{
+				ctx.TransNormals.Add(normal); ctx.TransUVs.Add(QuadUvs[0]); ctx.TransUV2s.Add(uv2Coord); ctx.TransVerts.Add(p0);
+				ctx.TransNormals.Add(normal); ctx.TransUVs.Add(QuadUvs[1]); ctx.TransUV2s.Add(uv2Coord); ctx.TransVerts.Add(p1);
+				ctx.TransNormals.Add(normal); ctx.TransUVs.Add(QuadUvs[2]); ctx.TransUV2s.Add(uv2Coord); ctx.TransVerts.Add(p2);
+				ctx.TransNormals.Add(normal); ctx.TransUVs.Add(QuadUvs[3]); ctx.TransUV2s.Add(uv2Coord); ctx.TransVerts.Add(p3);
+
+				// Triangle 1: v0 → v2 → v1 (Clockwise winding)
+				ctx.TransIndices.Add(baseIndex + 0); ctx.TransIndices.Add(baseIndex + 2); ctx.TransIndices.Add(baseIndex + 1);
+				// Triangle 2: v0 → v3 → v2 (Clockwise winding)
+				ctx.TransIndices.Add(baseIndex + 0); ctx.TransIndices.Add(baseIndex + 3); ctx.TransIndices.Add(baseIndex + 2);
+
 				hasTransparent = true;
 				transparentVertCount += 4;
 			}
 			else
 			{
+				ctx.OpaqueNormals.Add(normal); ctx.OpaqueUVs.Add(QuadUvs[0]); ctx.OpaqueUV2s.Add(uv2Coord); ctx.OpaqueVerts.Add(p0);
+				ctx.OpaqueNormals.Add(normal); ctx.OpaqueUVs.Add(QuadUvs[1]); ctx.OpaqueUV2s.Add(uv2Coord); ctx.OpaqueVerts.Add(p1);
+				ctx.OpaqueNormals.Add(normal); ctx.OpaqueUVs.Add(QuadUvs[2]); ctx.OpaqueUV2s.Add(uv2Coord); ctx.OpaqueVerts.Add(p2);
+				ctx.OpaqueNormals.Add(normal); ctx.OpaqueUVs.Add(QuadUvs[3]); ctx.OpaqueUV2s.Add(uv2Coord); ctx.OpaqueVerts.Add(p3);
+
+				// Triangle 1: v0 → v2 → v1 (Clockwise winding)
+				ctx.OpaqueIndices.Add(baseIndex + 0); ctx.OpaqueIndices.Add(baseIndex + 2); ctx.OpaqueIndices.Add(baseIndex + 1);
+				// Triangle 2: v0 → v3 → v2 (Clockwise winding)
+				ctx.OpaqueIndices.Add(baseIndex + 0); ctx.OpaqueIndices.Add(baseIndex + 3); ctx.OpaqueIndices.Add(baseIndex + 2);
+
 				hasOpaque = true;
 				opaqueVertCount += 4;
 			}
@@ -359,13 +405,13 @@ void fragment() {
 			// Collision geometry (solid voxels only)
 			if (VoxelRegistry.OccludesTable[id])
 			{
-				collisionVerts.Add(p0);
-				collisionVerts.Add(p2);
-				collisionVerts.Add(p1);
+				ctx.CollisionVerts.Add(p0);
+				ctx.CollisionVerts.Add(p2);
+				ctx.CollisionVerts.Add(p1);
 
-				collisionVerts.Add(p0);
-				collisionVerts.Add(p3);
-				collisionVerts.Add(p2);
+				ctx.CollisionVerts.Add(p0);
+				ctx.CollisionVerts.Add(p3);
+				ctx.CollisionVerts.Add(p2);
 			}
 		}
 	}
@@ -382,8 +428,11 @@ void fragment() {
 		Chunk chunk, Vector3I worldPos,
 		Func<int, int, int, ushort>? neighbourLookup)
 	{
-		if (Chunk.IsInBounds(nx, ny, nz))
-			return chunk.GetVoxel(nx, ny, nz);
+		// Inlined fast bounds check and flat array access.
+		if ((uint)nx < Chunk.SizeX && (uint)ny < Chunk.SizeY && (uint)nz < Chunk.SizeZ)
+		{
+			return chunk.Voxels[nx + Chunk.SizeX * (nz + Chunk.SizeZ * ny)];
+		}
 
 		if (neighbourLookup is not null)
 			return neighbourLookup(worldPos.X + nx, worldPos.Y + ny, worldPos.Z + nz);
@@ -426,4 +475,3 @@ void fragment() {
 		};
 	}
 }
-

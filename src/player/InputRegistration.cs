@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 public static class InputRegistration
 {

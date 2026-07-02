@@ -1,4 +1,5 @@
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A lightweight wrapper around the static VoxelRegistry that implements IRegistryAccess.

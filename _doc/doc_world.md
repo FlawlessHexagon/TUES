@@ -1,7 +1,7 @@
 # The Universal Entertainment System
 ## World Architecture Document (`doc_world.md`)
 
-*This document outlines the architecture of the TUES voxel world, detailing our ultimate vision, the current highly-optimized implementation, and our immediate future plans.*
+*This document outlines the architecture of the TUES voxel world, detailing the current highly-optimized implementation of the chunk system, and the Dimension Engine API used to generate terrain.*
 
 ---
 
@@ -17,7 +17,7 @@ Unlike legacy voxel engines that enforce strict global limits (e.g., exactly 256
 
 ---
 
-## 2. Current Implementation (What is Done Now)
+## 2. Chunk Architecture (Current Implementation)
 
 Phase 0 and Phase 1 successfully established the atomic layer of the world. The current architecture handles memory, multi-threading, and mesh generation flawlessly.
 
@@ -42,29 +42,103 @@ The geometry generator.
 
 ---
 
-## 3. Future Plans (Phase 2 & Beyond)
+## 3. Dimension Engines (`.tuesengine`)
 
-Phase 2 will transition this sterile mathematical grid into a living, atmospheric, and persistent universe.
+The core game has zero hardcoded knowledge of how the terrain is generated. Instead, terrain is generated using Dimension Engines (`.tuesengine` files).
 
-### 3.1 Step 2.0: The `.tuesengine` Package Pipeline
-The current hardcoded `WorldGenerator` will be completely gutted. 
-- A new `TuesEngineLoader` will load external `.tuesengine` archives, parsing their manifests and injecting custom blocks into the global registry.
-- It will load the packaged `.dll` files using secure `AssemblyLoadContext` sandboxing.
-- `ChunkManager` will be refactored to remove the hardcoded 128-block height limit. Instead, it will query the active Dimension Engine for its `MinY` and `MaxY` bounds.
+> **Note:** As a transitional measure during Step 2.0 implementation, `WorldGenerator.cs` currently contains fallback hardcoded generators (`Simplex`, `Perlin`, `Extreme`, `Superflat`) to support testing before the built-in `.tuesengine` packages are fully implemented in Step 2.1. These hardcoded shims will be removed once Step 2.1 is complete.
 
-### 3.2 Step 2.1: The Built-In `.tuesengine` Packages
-The core game will ship with native `.tuesengine` implementations for Default, Smooth, Extreme, and Flat world types.
+### 3.1 The Package Format
 
-### 3.3 Step 2.2: Structures & Decorators
-Following base terrain generation, the active engine will run secondary passes to carve out 3D noise caves and place hardcoded C# structures (like trees, boulders, and lakes).
+A `.tuesengine` file is simply a standard `.zip` archive. The engine will extract this archive into memory or a local cache directory to read its contents.
 
-### 3.4 Step 2.3: Lazy Lighting Engine
-A new background worker will be introduced: the **Dedicated Lighting Thread**.
-- It will calculate a 4-bit SkyLight value (dropping by -1 horizontally) and a 4-bit BlockLight value (flood-filling from torches in 6 directions).
-- These light values will be passed to the `ChunkMesher` to bake shadows directly into the vertex colors.
+**Internal Directory Structure:**
+At its absolute simplest, a Dimension Engine contains:
 
-### 3.5 Step 2.4: World Persistence
-When a chunk modified by the player falls out of bounds, it is not discarded.
-- Instead, the chunk's `ushort[]` array is cloned and an **Async Background Task** is dispatched.
-- This background task compresses the data via Zlib and writes it to a `.tregion` binary file on disk, completely avoiding main thread stutters.
-- Untouched chunks are simply discarded and mathematically regenerated next time, saving massive amounts of disk space.
+```text
+my_custom_world.tuesengine/
+│
+├── manifest.json               # Required: Identifies the package, dependencies, and entry point
+├── generator.dll               # Required: The compiled C# math logic
+│
+└── assets/                     # Optional: Assets specific to this dimension
+    ├── blocks.json             # Definitions for new custom blocks
+    └── textures/               # PNG files for the custom blocks
+        └── alien_dirt.png
+```
+
+### 3.2 The `manifest.json`
+
+The manifest tells the core game exactly what it is loading.
+
+```json
+{
+    "id": "community:alien_world",
+    "name": "The Alien World",
+    "version": "1.0.0",
+    "entry_dll": "generator.dll",
+    "dependencies": [
+        "community:some_required_mod"
+    ]
+}
+```
+
+> **Note:** The loader discovers the generator class by scanning the DLL for a type implementing `IDimensionGenerator` with a matching `[DimensionEngine("id")]` attribute, rather than requiring an explicit class name in the manifest.
+
+**Design Decision: Manifest Dependencies**
+*Status: Planned (Hard Dependencies)*
+If an engine wants to use a block provided by a separate `.tuesmod` addon, the package must declare it in the `dependencies` array. The core loader will enforce **Hard Dependencies**—it will gracefully refuse to load the `.tuesengine` if any required addon is missing, preventing unpredictable generator crashes and broken terrain.
+
+> **Note:** The current loader contains a stub check only. Real dependency validation requires a loaded-package registry, which will be built alongside Step 2.1 (built-in `.tuesengine` packages).
+
+### 3.3 The C# API (`IDimensionGenerator`)
+
+The `.dll` provided in the package must contain a class implementing the `IDimensionGenerator` interface. To ensure the engine is fully capable of scaling to complex terrain, the interface requires distinct systems:
+
+**A. Initialization & Registry Injection**
+*Status: Finalized (Dependency Injection)*
+A custom DLL generates chunks by writing `ushort` integers to an array. But it needs to know the integer ID of `"tues:grass"` or its own custom `"alien:dirt"`. The core engine injects an `IRegistryAccess` interface during initialization so the DLL can cache these IDs without relying on global singletons, preserving the hermetic sandbox.
+
+```csharp
+    // Called once when the world is loaded. 
+    // IRegistryAccess allows the DLL to query string IDs and get runtime ushort IDs.
+    void Initialize(int seed, IRegistryAccess registry);
+```
+
+**B. The Generation Pipeline**
+*Status: Finalized (Direct Array Modification)*
+If a generator tries to place a tree on the very edge of a chunk, the leaves will bleed into the neighbor chunk. If the engine blindly requests the neighbor chunk, the neighbor will generate, which might place a tree bleeding into the next... causing an infinite lag loop. 
+
+To solve this, chunk generation is strictly split into two passes. The Decorate pass receives an `IWorldAccess` interface to perform fast **Direct Array Modifications** on neighboring chunks, avoiding the massive overhead of event-driven updates.
+
+```csharp
+    // Pass 1: Base Terrain Geometry. 
+    // MUST be strictly confined within the 16x16 chunk boundaries.
+    void GenerateChunk(Chunk chunk);
+
+    // Pass 2: Decoration (Trees, Ores, Structures). 
+    // Called ONLY after all neighboring chunks have completed Pass 1.
+    // Safe to write to neighboring chunks via IWorldAccess.
+    void Decorate(Chunk chunk, IWorldAccess world);
+```
+
+**C. Dynamic World Bounds**
+*Status: Planned (Phase 2)*
+The engine will dictate how high or deep it goes.
+```csharp
+    int MinY { get; }
+    int MaxY { get; }
+```
+
+> **Note:** The current implementation uses a fixed 8-chunk (128-block) vertical range. Dynamic bounds from the engine's `MinY`/`MaxY` will be integrated when the two-pass Generate/Decorate pipeline (§3.3.B) is implemented.
+
+### 3.4 How it Works (The Simple Lifecycle)
+
+1. The player drops `alien.tuesengine` into their `user://dimensions/` folder.
+2. The player sets `"GeneratorType": "community:alien_world"` in `settings.json`.
+3. The game boots, unzips the package, and reads `manifest.json`.
+4. The game validates `dependencies`. If `community:some_required_mod` is missing, the engine gracefully aborts loading.
+5. The game dynamically injects `alien_dirt.png` into the global atlas and registers the blocks.
+6. The game loads `generator.dll` inside a secure `AssemblyLoadContext` sandbox.
+7. The game calls `Initialize(seed, registry)` so the engine can query its block IDs.
+8. The `ChunkManager` begins running `GenerateChunk` on all chunks, followed safely by `Decorate`!

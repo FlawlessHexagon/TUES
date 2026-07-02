@@ -278,6 +278,12 @@ sharing pre-built worlds, or for server preparation). The system must support ex
 saving unmodified chunks when requested, not just as a "dirty" flag. Pre-generation is
 an opt-in action, not the default.
 
+#### World Bounding (Limited vs. Unlimited)
+
+The core engine natively supports generating both **limited** and **unlimited** open worlds. However, the supreme authority over the world boundary is dictated by the player's UI settings (or the Server in multiplayer). 
+- If a Dimension Engine is designed to generate an infinite world, but the player configures a "limited world" setting, the player's setting wins.
+- When this boundary is reached, the core engine enforces a massive, impassable physical barrier (a unique "Farlands-esque" wall) to stop physical movement, overriding the generator.
+
 #### Dimension Engines (Future Concept)
 
 Seed-based generation with fixed noise functions is a starting point, not the end state.
@@ -312,6 +318,7 @@ Key concerns to be addressed when this becomes active:
   compression, change batching, and priority queuing are expected solutions.
 - **Server ↔ client authority model**: who is the source of truth for world state?
   What is validated server-side vs. trusted client-side?
+- **The Hybrid Module Hierarchy**: To resolve conflicts between player-installed modules and server modules, TUES uses a hybrid authority model. The Server is the absolute authority over terrain, bounds, and gameplay modules. However, clients retain the freedom to run purely "client-side" modules (UI mods, local shaders) locally, as long as they do not violate the server's rules.
 - **Scalability**: these games can grow to massive player counts. The networking
   architecture must degrade gracefully under load, not catastrophically.
 
@@ -324,8 +331,7 @@ dedicated `doc_network.md` when this workstream begins.*
 
 ### Pillar 1 — The Voxel World (Shared Identity)
 The default TUES world is a specific, opinionated experience. Every player starts from
-the same recognisable reality. This common ground is sacred — it is what makes TUES
-feel like *one game* rather than a platform of disconnected experiences.
+the same recognisable reality. This highly-polished vanilla survival experience acts as the foundational anchor, teaching players the baseline mechanics and establishing a shared community identity. However, TUES is ultimately a **game engine**; once players master the baseline, the engine's extreme configurability allows them to seamlessly pivot into radically different user-generated worlds (e.g., custom maps, new games). The shared identity is the gateway to maximum freedom.
 
 ### Pillar 2 — Extreme Optimisation (Universal Access)
 TUES must run well on a wide range of hardware. Optimisation is an architectural
@@ -384,10 +390,11 @@ Make the world worth exploring.
 
 | Step  | Name                        | Scope                                                    |
 |-------|-----------------------------|----------------------------------------------------------|
-| 2.0   | **Terrain Variety**         | Multiple terrain types via noise layering. Height variation. Basic biome differentiation. |
-| 2.1   | **Structure Generation**    | Trees, rock formations, caves. Placed during chunk generation. |
-| 2.2   | **Lighting System**         | Sky light propagation. Block light sources. Light level stored per voxel. Dynamic updates on block change. |
-| 2.3   | **World Persistence**       | Save/load modified chunks. Region file format. World metadata file. |
+| 2.0   | **Package Pipeline**        | Load `.tuesengine` archives, parse manifests, sandbox DLLs, rebuild atlas dynamically. |
+| 2.1   | **Built-In Packages**       | Core generator types (Default, Smooth, Extreme, Flat) packaged as `.tuesengine` files. |
+| 2.2   | **Structures & Decorators** | 3D noise cave carvers, C# structure decorators (trees), Generate/Decorate pass split. |
+| 2.3   | **Voxel Lighting Engine**   | Sky light and block light propagation running on a dedicated worker thread. |
+| 2.4   | **World Persistence**       | Async saving of player-modified chunks to binary `.tregion` files. |
 
 ### Phase 3+ — (To Be Planned)
 
@@ -406,11 +413,12 @@ live in separate documents:
 | Document                 | Scope                                              |
 |--------------------------|----------------------------------------------------|
 | `doc_general.md`         | This file. Vision, taxonomy, architecture overview. |
-| `doc_world.md`           | World storage, region files, chunk format, I/O.     |
+| `doc_ai_architecture.md` | AI-optimized project knowledge base. Read this first. |
+| `doc_world.md`           | World storage, chunk format, Dimension Engines.     |
 | *(future)* `doc_fixtures.md`  | Voxel registry, Fixture types, state system.   |
 | *(future)* `doc_entities.md`  | Entity system, ticking, physics, AI.           |
-| *(future)* `doc_modules.md`   | Module API, scripting, Dimension Engines.      |
-| *(future)* `doc_network.md`   | Multiplayer architecture, P2P, sync protocol.  |
+| *(future)* `doc_modules.md`   | Module API and general scripting.              |
+| `doc_network.md`         | Multiplayer boundaries, trust model, and chunk sync. |
 
 ---
 

@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// The physical representation of a player entity. 
@@ -47,8 +48,8 @@ public partial class Player : CharacterBody3D
         // Void Safety Net
         if (GlobalPosition.Y < -50.0f)
         {
-            GD.Print("[Physics] Player fell into the void. Resurrecting at skybox.");
-            GlobalPosition = new Vector3(0, 100, 0);
+            Logger.Warning("[Physics] Player fell into the void. Resurrecting at skybox.");
+            GlobalPosition = new Vector3(GlobalPosition.X, 200, GlobalPosition.Z);
             Velocity = Vector3.Zero;
         }
     }

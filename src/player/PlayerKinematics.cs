@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A pure mathematical layer for player kinematics.

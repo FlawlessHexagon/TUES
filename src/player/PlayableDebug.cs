@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A visual debug script to test the decoupled Phase 1.1 Player controls.
@@ -15,11 +16,11 @@ public partial class PlayableDebug : SceneTree
 
     public override void _Initialize()
     {
-        GD.Print("=== Starting Playable Visual Debug ===");
+        Logger.Info("=== Starting Playable Visual Debug ===");
 
-        // Set FPS to 120 and disable VSync for uncapped performance testing
-        DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
-        Engine.MaxFps = 120;
+        // Note: We leave VSync enabled (Godot's default) to allow the OS compositor 
+        // to handle frame pacing correctly. Disabling VSync and running at 120fps 
+        // while the physics tick runs at 60hz causes movement stuttering in windowed mode.
 
         InputRegistration.RegisterCoreActions();
 
@@ -27,7 +28,10 @@ public partial class PlayableDebug : SceneTree
         VoxelRegistration.RegisterCoreTypes();
         
         // Execute Step 2.0 Integration Test
-        TuesEngineLoaderTest.RunTest();
+        // if (OS.IsDebugBuild())
+        // {
+        //     TuesEngineLoaderTest.RunTest();
+        // }
         
         VoxelRegistry.FreezeRegistry();
 
@@ -36,7 +40,7 @@ public partial class PlayableDebug : SceneTree
         _chunkManager = new ChunkManager();
         _chunkManager.ReferencePosition = new Vector3(0, 100, 0); // Pre-load where player spawns
         _chunkManager.OnVoxelChanged += (pos, id) => {
-            GD.Print($"[Network Delta Event] Voxel at {pos} changed to {id}");
+            Logger.Debug($"[Network Delta Event] Voxel at {pos} changed to {id}");
         };
         Root.AddChild(_chunkManager);
 
@@ -95,7 +99,7 @@ public partial class PlayableDebug : SceneTree
                 }
 
                 _player.Position = new Vector3(0, spawnY, 0);
-                GD.Print($"World loaded! Spawning player smoothly at Y={spawnY}");
+                Logger.Info($"World loaded! Spawning player smoothly at Y={spawnY}");
 
                 // Defer physics unlocking by 0.1 seconds to allow the Godot PhysicsServer3D 
                 // to synchronize the hundreds of newly attached collision meshes.

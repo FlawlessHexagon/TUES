@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A lightweight, network-safe struct representing a player's physical intent for a single physics frame.

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 public class BlockDefinitionDto
 {

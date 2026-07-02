@@ -1,4 +1,4 @@
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Tracks the lifecycle of a <see cref="Chunk"/>. Systems check this state before

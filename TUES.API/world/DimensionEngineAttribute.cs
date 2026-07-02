@@ -1,6 +1,6 @@
 using System;
 
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Identifies a class as a dimension engine.

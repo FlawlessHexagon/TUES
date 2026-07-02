@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// The central registry of all voxel type definitions. Manages the bidirectional

@@ -1,10 +1,9 @@
 #Project Specific
-_doc/_godot_docs_html_stable/
-_doc/_media_footage
-_doc/_system_design_primer_master/
+_doc/_external_sources/
+_doc/_media_footage/
 _doc/agent_prompt/
-_doc/agent_report/
 _doc/fix_note/
+_doc/doc_ai_architecture.md
 agent_protocol.md
 **/_disconnected/
 
@@ -64,3 +63,4 @@ tmbootpicker.efi
 export.cfg
 export_credentials.cfg
 *.tmp
+*.uid

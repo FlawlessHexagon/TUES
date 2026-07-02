@@ -1,4 +1,5 @@
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Registers the core voxel types that ship with the base game. Separated from

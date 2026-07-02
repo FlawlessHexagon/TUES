@@ -1,4 +1,4 @@
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Provides read-only access to the voxel registry for dimension generators.

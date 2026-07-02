@@ -3,16 +3,19 @@ using System.Text.Json;
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Data Transfer Object for JSON serialization.
 /// </summary>
 public class GameSettingsData
 {
-    public int RenderDistance { get; set; } = 64;
+    // Phase 0 validated at RD=8; default 16 balances visibility and scheduler cost.
+    // Ultra (64+) requires Phase 2 LOD/batching optimizations.
+    public int RenderDistance { get; set; } = 16;
     public int SimulationDistance { get; set; } = 2;
     public int WorldSeed { get; set; } = 1337;
-    public string GeneratorType { get; set; } = "simplex";
+    public string GeneratorType { get; set; } = "tues:default";
 }
 
 /// <summary>
@@ -42,13 +45,13 @@ public static class GameSettings
                 if (loaded != null)
                 {
                     _data = loaded;
-                    GD.Print($"[GameSettings] Successfully loaded settings from {path}");
+                    Logger.Info($"[GameSettings] Successfully loaded settings from {path}");
                     return;
                 }
             }
             catch (System.Exception e)
             {
-                GD.PushError($"[GameSettings] Failed to load settings.json: {e.Message}. Falling back to defaults.");
+                Logger.Error($"[GameSettings] Failed to load settings.json: {e.Message}. Falling back to defaults.");
             }
         }
         
@@ -72,11 +75,11 @@ public static class GameSettings
             }
 
             File.WriteAllText(path, json);
-            GD.Print($"[GameSettings] Saved settings to {path}");
+            Logger.Info($"[GameSettings] Saved settings to {path}");
         }
         catch (System.Exception e)
         {
-            GD.PushError($"[GameSettings] Failed to save settings.json: {e.Message}");
+            Logger.Error($"[GameSettings] Failed to save settings.json: {e.Message}");
         }
     }
 }

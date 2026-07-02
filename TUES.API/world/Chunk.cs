@@ -3,7 +3,7 @@ using System;
 using System.Buffers;
 using System.Threading;
 
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A fixed-size 3D container of voxel data. Stores <see cref="Volume"/> runtime IDs

@@ -8,5 +8,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="past failure/**" />
+    <Compile Remove="TUES.API/**" />
+    <Compile Remove="packages_src/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="TUES.API/TUES.API.csproj" />
   </ItemGroup>
 </Project>

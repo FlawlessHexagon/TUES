@@ -1,4 +1,4 @@
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Determines how a voxel type generates its visual geometry during chunk meshing.

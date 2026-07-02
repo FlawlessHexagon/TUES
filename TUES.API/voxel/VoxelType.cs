@@ -1,6 +1,6 @@
 using System;
 
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// The immutable data definition of a voxel type. Describes a category of voxel — not

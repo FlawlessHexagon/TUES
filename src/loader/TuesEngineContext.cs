@@ -1,6 +1,7 @@
 using System.Runtime.Loader;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A custom AssemblyLoadContext to isolate dimension generator DLLs.
@@ -13,8 +14,11 @@ public class TuesEngineContext : AssemblyLoadContext
 
 	protected override System.Reflection.Assembly? Load(System.Reflection.AssemblyName assemblyName)
 	{
-		// In Godot, assemblies like GodotSharp or the core game DLL are loaded into a custom Godot ALC.
-		// If the dimension generator requires them, we must provide the already-loaded host assemblies.
+		if (assemblyName.Name == "TUES.API")
+		{
+			return typeof(IDimensionGenerator).Assembly;
+		}
+
 		foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
 		{
 			if (asm.GetName().Name == assemblyName.Name)

@@ -2,6 +2,7 @@ using Godot;
 using System;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// The programmatic Zero-Scene HUD for the local player.

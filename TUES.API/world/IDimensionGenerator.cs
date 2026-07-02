@@ -1,4 +1,4 @@
-namespace TheUniversalEntertainmentSystem;
+namespace TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Defines the contract for dimension-specific terrain generation engines.

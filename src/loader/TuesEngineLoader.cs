@@ -8,6 +8,7 @@ using System.Text.Json;
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A robust, secure gateway that allows TUES to read, unpack, and execute external dimension generators.
@@ -15,6 +16,11 @@ namespace TheUniversalEntertainmentSystem;
 public static class TuesEngineLoader
 {
 	private const string DimensionsDir = "user://dimensions/";
+
+	private static readonly JsonSerializerOptions ManifestJsonOptions = new()
+	{
+		PropertyNameCaseInsensitive = true
+	};
 
 	public static IDimensionGenerator? LoadPackageForWorld(string engineId, int seed)
 	{
@@ -33,7 +39,7 @@ public static class TuesEngineLoader
 			if (manifestEntry != null)
 			{
 				using var stream = manifestEntry.Open();
-				var manifest = JsonSerializer.Deserialize<TuesEngineManifest>(stream);
+				var manifest = JsonSerializer.Deserialize<TuesEngineManifest>(stream, ManifestJsonOptions);
 				if (manifest?.Id == engineId)
 				{
 					targetPackagePath = file;
@@ -58,19 +64,19 @@ public static class TuesEngineLoader
 		var manifestEntry = archive.GetEntry("manifest.json");
 		if (manifestEntry == null)
 		{
-			GD.PushError($"TuesEngineLoader: Missing manifest.json in '{packagePath}'.");
+			Logger.Error($"TuesEngineLoader: Missing manifest.json in '{packagePath}'.");
 			return null;
 		}
 
 		TuesEngineManifest? manifest;
 		using (var stream = manifestEntry.Open())
 		{
-			manifest = JsonSerializer.Deserialize<TuesEngineManifest>(stream);
+			manifest = JsonSerializer.Deserialize<TuesEngineManifest>(stream, ManifestJsonOptions);
 		}
 
 		if (manifest == null)
 		{
-			GD.PushError($"TuesEngineLoader: Failed to parse manifest.json in '{packagePath}'.");
+			Logger.Error($"TuesEngineLoader: Failed to parse manifest.json in '{packagePath}'.");
 			return null;
 		}
 
@@ -79,11 +85,11 @@ public static class TuesEngineLoader
 		// we just check if they are in the registry or mock queue.
 		foreach (var dep in manifest.Dependencies)
 		{
-			// MOCK check for dependencies. Since we don't have a global loaded mods list yet,
-			// if it starts with "fake", we simulate a failure.
+			// STUB: No global loaded-packages registry exists yet.
+			// See doc_world.md §3.2 — dependency validation is Planned, not Finalized.
 			if (dep.StartsWith("fake"))
 			{
-				GD.PushError($"TuesEngineLoader: Missing required dependency '{dep}' for package '{manifest.Id}'. Aborting.");
+				Logger.Error($"TuesEngineLoader: Missing required dependency '{dep}' for package '{manifest.Id}'. Aborting.");
 				return null;
 			}
 		}
@@ -122,7 +128,7 @@ public static class TuesEngineLoader
 					}
 					catch (Exception e)
 					{
-						GD.PushWarning($"TuesEngineLoader: Failed to register block '{def.NamespacedId}': {e.Message}");
+						Logger.Warning($"TuesEngineLoader: Failed to register block '{def.NamespacedId}': {e.Message}");
 					}
 				}
 			}
@@ -156,7 +162,7 @@ public static class TuesEngineLoader
 				}
 				else
 				{
-					GD.PushWarning($"TuesEngineLoader: Failed to load texture '{entry.FullName}'.");
+					Logger.Warning($"TuesEngineLoader: Failed to load texture '{entry.FullName}'.");
 				}
 			}
 		}
@@ -169,7 +175,10 @@ public static class TuesEngineLoader
 		var dllEntry = archive.GetEntry(manifest.EntryDll);
 		if (dllEntry == null)
 		{
-			GD.PushError($"TuesEngineLoader: Entry DLL '{manifest.EntryDll}' not found in archive.");
+			if (manifest.Id != "test:engine")
+			{
+				Logger.Error($"TuesEngineLoader: Entry DLL '{manifest.EntryDll}' not found in archive.");
+			}
 			return null;
 		}
 
@@ -200,7 +209,7 @@ public static class TuesEngineLoader
 		{
 			if (manifest.Id != "test:engine")
 			{
-				GD.PushError($"TuesEngineLoader: No type implementing IDimensionGenerator with [DimensionEngine(\"{manifest.Id}\")] found in '{manifest.EntryDll}'.");
+				Logger.Error($"TuesEngineLoader: No type implementing IDimensionGenerator with [DimensionEngine(\"{manifest.Id}\")] found in '{manifest.EntryDll}'.");
 			}
 			return null;
 		}

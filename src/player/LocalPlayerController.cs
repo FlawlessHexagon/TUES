@@ -1,6 +1,7 @@
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// Manages the local human player's presentation layer: Camera, Mouse Capture, and Input Polling.
@@ -87,12 +88,12 @@ public partial class LocalPlayerController : Node3D
                         {
                             if (hitPos.Y <= 0)
                             {
-                                GD.Print($"[Interact] Blocked breaking at {hitPos} (Bedrock layer)");
+                                Logger.Debug($"[Interact] Blocked breaking at {hitPos} (Bedrock layer)");
                             }
                             else
                             {
                                 _chunkManager.ApplyVoxelDelta(hitPos, VoxelRegistry.AirId); 
-                                GD.Print($"[Interact] Broke block at {hitPos}");
+                                Logger.Debug($"[Interact] Broke block at {hitPos}");
                             }
                         }
                         else
@@ -112,11 +113,11 @@ public partial class LocalPlayerController : Node3D
                                 if (!intersects)
                                 {
                                     _chunkManager.ApplyVoxelDelta(prevPos, selectedId); 
-                                    GD.Print($"[Interact] Placed voxel {selectedId} at {prevPos}");
+                                    Logger.Debug($"[Interact] Placed voxel {selectedId} at {prevPos}");
                                 }
                                 else
                                 {
-                                    GD.Print($"[Interact] Blocked placement at {prevPos} (Player overlap)");
+                                    Logger.Debug($"[Interact] Blocked placement at {prevPos} (Player overlap)");
                                 }
                             }
                         }

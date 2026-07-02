@@ -1,8 +1,9 @@
 using System;
 using Godot;
-using TheUniversalEntertainmentSystem.Dimensions;
+
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A global registry and entry point for world generation.
@@ -25,26 +26,8 @@ public static class WorldGenerator
 
 			if (_activeGenerator == null)
 			{
-				// GD.PushWarning($"WorldGenerator: Could not load package '{generatorType}'. Using fallback hardcoded generator for Step 2.0 tests.");
-				
-				// Initialize ChunkMesher with fallback atlas for old generators
-				var images = new Godot.Collections.Array<Godot.Image>();
-				TuesEngineLoader.AddCoreImages(images);
-				var atlasTexture = new Godot.Texture2DArray();
-				atlasTexture.CreateFromImages(images);
-				ChunkMesher.Initialize(atlasTexture);
-
-				_activeGenerator = generatorType switch
-				{
-					"default" => new SimplexGenerator(),
-					"smooth" => new PerlinGenerator(),
-					"extreme" => new ExtremeGenerator(),
-					"perlin" => new PerlinGenerator(),
-					"simplex" => new SimplexGenerator(),
-					_ => new SuperflatGenerator()
-				};
-
-				_activeGenerator.Initialize(seed, new VoxelRegistryWrapper());
+				Logger.Error($"WorldGenerator: Could not load dimension package '{generatorType}'. The engine requires a valid .tuesengine package.");
+				throw new Exception($"Missing dimension package: {generatorType}");
 			}
 
 			_currentSeed = seed;

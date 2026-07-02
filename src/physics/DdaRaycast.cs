@@ -2,6 +2,7 @@ using System;
 using Godot;
 
 namespace TheUniversalEntertainmentSystem;
+using TheUniversalEntertainmentSystem.API;
 
 /// <summary>
 /// A pure mathematical 3D Digital Differential Analyzer (DDA) for voxel raycasting.
